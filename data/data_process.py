@@ -8,7 +8,7 @@ import pandas as pd
 from torch.utils.data import DataLoader, DistributedSampler
 import sys
 sys.path.append('../')
-from utils import *
+from src.utils import *
 
 
 class DeepFake(data.Dataset):

@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 import numpy as np
 from timm.models.layers import DropPath, trunc_normal_
+from collections import OrderedDict
 
 from functools import reduce, lru_cache
 from operator import mul
@@ -694,10 +695,60 @@ class PoolingMLP(nn.Module):
         super().__init__()
         self.softmax = nn.Softmax(-1)
         self.Pooling = 'mean'
-        self.mlp = Mlp(in_feature,num_hidden,num_classes,drop=0.1)
+        self.mlp = Mlp(in_feature,num_hidden,num_classes,drop=args.classify_drop)
     
     def forward(self, x):
         if self.Pooling == 'mean':
             feat = x.mean(dim=[2,3,4]) # [batch_size, hidden_dim]
         feat = self.mlp(feat)
         return self.softmax(feat)
+    
+class VideoClassifier(nn.Module):
+    def __init__(self,
+                 args, 
+                 pretrained=None,
+                 pretrained2d=True,
+                 patch_size=(2,4,4),
+                 in_chans=3,
+                 embed_dim=128,
+                 depths=[2, 2, 18, 2],
+                 num_heads=[4, 8, 16, 32],
+                 window_size=(16,7,7),
+                 mlp_ratio=4.,
+                 qkv_bias=True,
+                 qk_scale=None,
+                 drop_rate=0.,
+                 attn_drop_rate=0.,
+                 drop_path_rate=0.2,
+                 norm_layer=nn.LayerNorm,
+                 patch_norm=False,
+                 frozen_stages=-1,
+                 use_checkpoint=False,
+                 num_hiddens=128, 
+                 num_classes=2,
+                 pretrain_dir = r'checkpoints/swin_base_patch244_window1677_kinetics400_22k_host.pth'):
+        super().__init__()
+        pretrain_dir = args.pretrained_dir
+        videoSwinT = SwinTransformer3D(embed_dim=embed_dim, 
+                                        depths=depths, 
+                                        num_heads=num_heads, 
+                                        patch_size=patch_size, 
+                                        window_size=window_size, 
+                                        drop_path_rate=args.swin_drop, 
+                                        patch_norm=True)
+        checkpoint = torch.load(pretrain_dir)
+
+        new_state_dict = OrderedDict()
+        for k, v in checkpoint['state_dict'].items():
+            if 'backbone' in k:
+                name = k[9:]
+                new_state_dict[name] = v 
+
+        videoSwinT.load_state_dict(new_state_dict) 
+        self.videoSwinT = videoSwinT
+        num_hiddens = args.num_hiddens
+        self.classsifier = PoolingMLP(args, 1024, num_hiddens, num_classes)
+    
+    def forward(self, x):
+        vst_out = self.videoSwinT(x)
+        return self.classsifier(vst_out)
