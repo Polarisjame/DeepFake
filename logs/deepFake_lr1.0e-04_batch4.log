@@ -1,0 +1,53 @@
+2024-07-15 16:15:14.366049 processId: 3872315
+2024-07-15 16:15:14.366096 prarent processId: 586877
+2024-07-15 16:15:14.366328 {
+    "data_root": "/data/lingfeng/ffdv_phase1_sample",
+    "num_frames": 32,
+    "num_workers": 3,
+    "pretrained_dir": "checkpoints/swin_base_patch244_window1677_kinetics400_22k_host.pth",
+    "classify_drop": 0.1,
+    "swin_drop": 0.1,
+    "num_hiddens": 128,
+    "batch_size": 4,
+    "use_cuda": true,
+    "l2_decacy": 1e-06,
+    "epochs": 50,
+    "learning_rate": 0.0001,
+    "model_save": 5,
+    "log_step": 10
+}
+2024-07-15 16:15:25.056596 模型总大小为：2018.995MB
+2024-07-15 16:15:25.056663 (1999055656, 499763914, 118013952, 14751744, 2018.9949111938477)
+2024-07-15 16:15:26.402421 [INFO] Start training, lr = 0.0001
+2024-07-15 16:15:34.628404 | epoch  1 | step    0 | lr 1.0000E-04 | Train Loss 0.65026 | Train Acc 0.75000 
+2024-07-15 16:15:47.702465 | epoch  1 | step   10 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:16:00.930971 | epoch  1 | step   20 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:16:14.258417 | epoch  1 | step   30 | lr 1.0000E-04 | Train Loss 0.31326 | Train Acc 1.00000 
+2024-07-15 16:16:27.366585 | epoch  1 | step   40 | lr 1.0000E-04 | Train Loss 0.56326 | Train Acc 0.75000 
+2024-07-15 16:16:40.559773 | epoch  1 | step   50 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:16:53.723583 | epoch  1 | step   60 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:17:06.793277 | epoch  1 | step   70 | lr 1.0000E-04 | Train Loss 1.06326 | Train Acc 0.25000 
+2024-07-15 16:17:19.989820 | epoch  1 | step   80 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:17:33.206300 | epoch  1 | step   90 | lr 1.0000E-04 | Train Loss 0.56326 | Train Acc 0.75000 
+2024-07-15 16:17:46.384179 | epoch  1 | step  100 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:17:59.580555 | epoch  1 | step  110 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:18:12.707839 | epoch  1 | step  120 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:18:26.579877 | epoch  1 | step  130 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:18:39.688897 | epoch  1 | step  140 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:18:52.788621 | epoch  1 | step  150 | lr 1.0000E-04 | Train Loss 1.06326 | Train Acc 0.25000 
+2024-07-15 16:19:05.934050 | epoch  1 | step  160 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:19:19.065084 | epoch  1 | step  170 | lr 1.0000E-04 | Train Loss 1.15823 | Train Acc 0.00000 
+2024-07-15 16:19:32.155975 | epoch  1 | step  180 | lr 1.0000E-04 | Train Loss 1.06326 | Train Acc 0.25000 
+2024-07-15 16:19:45.280299 | epoch  1 | step  190 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:19:58.327264 | epoch  1 | step  200 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:20:11.481554 | epoch  1 | step  210 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:20:24.697318 | epoch  1 | step  220 | lr 1.0000E-04 | Train Loss 0.56326 | Train Acc 0.75000 
+2024-07-15 16:20:37.625589 | epoch  1 | step  230 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:20:50.802547 | epoch  1 | step  240 | lr 1.0000E-04 | Train Loss 1.06326 | Train Acc 0.25000 
+2024-07-15 16:21:03.912654 | epoch  1 | step  250 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:21:17.030486 | epoch  1 | step  260 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:21:30.131860 | epoch  1 | step  270 | lr 1.0000E-04 | Train Loss 0.81326 | Train Acc 0.50000 
+2024-07-15 16:21:43.183139 | epoch  1 | step  280 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:21:56.340994 | epoch  1 | step  290 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:22:09.341395 | epoch  1 | step  300 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 
+2024-07-15 16:22:22.442012 | epoch  1 | step  310 | lr 1.0000E-04 | Train Loss 1.31326 | Train Acc 0.00000 

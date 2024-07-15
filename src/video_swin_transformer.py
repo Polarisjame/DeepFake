@@ -37,7 +37,6 @@ def get_root_logger(log_file=None, log_level=logging.INFO):
     """
     return get_logger(__name__.split('.')[0], log_file, log_level)
 
-
 class Mlp(nn.Module):
     """ Multilayer perceptron."""
 
@@ -64,6 +63,7 @@ def window_partition(x, window_size):
     Args:
         x: (B, D, H, W, C)
         window_size (tuple[int]): window size
+
     Returns:
         windows: (B*num_windows, window_size*window_size, C)
     """
@@ -80,6 +80,7 @@ def window_reverse(windows, window_size, B, D, H, W):
         window_size (tuple[int]): Window size
         H (int): Height of image
         W (int): Width of image
+
     Returns:
         x: (B, D, H, W, C)
     """
@@ -193,6 +194,7 @@ class WindowAttention3D(nn.Module):
 
 class SwinTransformerBlock3D(nn.Module):
     """ Swin Transformer Block.
+
     Args:
         dim (int): Number of input channels.
         num_heads (int): Number of attention heads.
@@ -274,6 +276,7 @@ class SwinTransformerBlock3D(nn.Module):
 
     def forward(self, x, mask_matrix):
         """ Forward function.
+
         Args:
             x: Input feature, tensor size (B, D, H, W, C).
             mask_matrix: Attention mask for cyclic shift.
@@ -296,6 +299,7 @@ class SwinTransformerBlock3D(nn.Module):
 
 class PatchMerging(nn.Module):
     """ Patch Merging Layer
+
     Args:
         dim (int): Number of input channels.
         norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
@@ -308,6 +312,7 @@ class PatchMerging(nn.Module):
 
     def forward(self, x):
         """ Forward function.
+
         Args:
             x: Input feature, tensor size (B, D, H, W, C).
         """
@@ -349,6 +354,7 @@ def compute_mask(D, H, W, window_size, shift_size, device):
 
 class BasicLayer(nn.Module):
     """ A basic Swin Transformer layer for one stage.
+
     Args:
         dim (int): Number of feature channels
         depth (int): Depths of this stage.
@@ -408,6 +414,7 @@ class BasicLayer(nn.Module):
 
     def forward(self, x):
         """ Forward function.
+
         Args:
             x: Input feature, tensor size (B, C, D, H, W).
         """
@@ -431,6 +438,7 @@ class BasicLayer(nn.Module):
 
 class PatchEmbed3D(nn.Module):
     """ Video to Patch Embedding.
+
     Args:
         patch_size (int): Patch token size. Default: (2,4,4).
         in_chans (int): Number of input video channels. Default: 3.
@@ -470,11 +478,11 @@ class PatchEmbed3D(nn.Module):
 
         return x
 
-
 class SwinTransformer3D(nn.Module):
     """ Swin Transformer backbone.
         A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows`  -
           https://arxiv.org/pdf/2103.14030
+
     Args:
         patch_size (int | tuple(int)): Patch size. Default: (4,4,4).
         in_chans (int): Number of input image channels. Default: 3.
@@ -576,10 +584,12 @@ class SwinTransformer3D(nn.Module):
 
     def inflate_weights(self, logger):
         """Inflate the swin2d parameters to swin3d.
+
         The differences between swin3d and swin2d mainly lie in an extra
         axis. To utilize the pretrained parameters in 2d model,
         the weight of swin2d models should be inflated to fit in the shapes of
         the 3d counterpart.
+
         Args:
             logger (logging.Logger): The logger used to print
                 debugging infomation.
@@ -627,6 +637,7 @@ class SwinTransformer3D(nn.Module):
 
     def init_weights(self, pretrained=None):
         """Initialize the weights in backbone.
+
         Args:
             pretrained (str, optional): Path to pre-trained weights.
                 Defaults to None.
@@ -691,15 +702,21 @@ class SwinTransformer3D(nn.Module):
 #     return output
 class PoolingMLP(nn.Module):
 
-    def __init__(self, args, in_feature, num_hidden=128, num_classes=2) -> None:
+    def __init__(self, args, in_feature, num_hidden=128, num_classes=2, PoolingMethod='mean') -> None:
         super().__init__()
         self.softmax = nn.Softmax(-1)
-        self.Pooling = 'mean'
+        self.Pooling = PoolingMethod
+        self.CNN = nn.Conv3d(1024,512,[16,7,7])
+        if PoolingMethod == 'CNN':
+            in_feature=512
         self.mlp = Mlp(in_feature,num_hidden,num_classes,drop=args.classify_drop)
     
     def forward(self, x):
         if self.Pooling == 'mean':
             feat = x.mean(dim=[2,3,4]) # [batch_size, hidden_dim]
+        elif self.Pooling == 'CNN':
+            feat = torch.squeeze(self.CNN(x))
+        # print(feat.shape)
         feat = self.mlp(feat)
         return self.softmax(feat)
     
@@ -728,7 +745,7 @@ class VideoClassifier(nn.Module):
                  num_classes=2,
                  pretrain_dir = r'checkpoints/swin_base_patch244_window1677_kinetics400_22k_host.pth'):
         super().__init__()
-        pretrain_dir = args.pretrained_dir
+        pretrain_dir = args.video_pretrained_dir
         videoSwinT = SwinTransformer3D(embed_dim=embed_dim, 
                                         depths=depths, 
                                         num_heads=num_heads, 
@@ -750,5 +767,6 @@ class VideoClassifier(nn.Module):
         self.classsifier = PoolingMLP(args, 1024, num_hiddens, num_classes)
     
     def forward(self, x):
-        vst_out = self.videoSwinT(x)
+        vst_out = self.videoSwinT(x) # B C D H W B 1024 16 7 7
+        # print(vst_out.shape)
         return self.classsifier(vst_out)

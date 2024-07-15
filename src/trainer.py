@@ -1,7 +1,7 @@
 import os
 from src.video_swin_transformer import *
 from torch.nn import BCELoss,BCEWithLogitsLoss,CrossEntropyLoss
-from torch.optim import Adam, lr_scheduler, SGD, RMSprop
+from torch.optim import AdamW, lr_scheduler, SGD, RMSprop
 from src.utils import Logger, AverageMeter
 from data.data_process import DeepFakeSet
 from torch.nn.parallel import DataParallel 
@@ -28,20 +28,23 @@ class Trainer():
         self.device = device
         self.lr = args.learning_rate
         self.batch_size = args.batch_size
+        self.modality = args.modality
         if logger is None:
             self.logger = Logger(f'./logs/deepFake_lr{self.lr}_batch{self.batch_size}.log')
         else:
             self.logger = logger
+        model.cuda()
         self.model = model
+        self.model_save = args.model_save
         
         # GPU Parallel
-        device_ids = list(range(torch.cuda.device_count())) 
-        self.model = DataParallel(self.model, device_ids=device_ids).to(device_ids[0]) 
+        # device_ids = list(range(torch.cuda.device_count())) 
+        # self.model = DataParallel(self.model, device_ids=device_ids).to(device_ids[0]) 
         
         self.log_step = args.log_step
         logger(getModelSize(model, logger))
         
-        self.optimizer = Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.l2_decacy)
+        self.optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.l2_decacy, betas=(0.9, 0.999))
         self.scheduler = lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.train_epochs)
         self.lossF = CrossEntropyLoss()
         # self.optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.l2_decacy)
@@ -99,5 +102,7 @@ class Trainer():
                     loss_stat.update(loss)
                 logger(f'Phase:{phase}, Avg Loss:{loss_stat.avg}')
                 loss_stat.reset()
+            if epoch % self.model_save == 0:
+                torch.save(self.model.state_dict(), "./checkpoints/VST_deepfake_epoch{:d}.pth".format(epoch))
 
                     
