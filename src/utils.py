@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from datetime import datetime
 
 def extract_frames(video_path, num_frames):
     # 打开视频文件
@@ -33,3 +34,34 @@ def preprocess_frames(frames,target_size):
         preprocessed_frames.append(frame)
     
     return np.array(preprocessed_frames)
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        if self.count > 0:
+          self.avg = self.sum / self.count
+          
+class Logger():
+    
+    def __init__(self, log_dir):
+        self.log_dir = log_dir
+        self.f = open(log_dir, 'a')
+        self.f.truncate(0)
+    
+    def __call__(self, string):
+        print(datetime.now(), string, file=self.f)
+        
+    def __delete__(self):
+        self.f.close()

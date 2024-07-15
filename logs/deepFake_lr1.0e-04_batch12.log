@@ -1,0 +1,20 @@
+2024-07-15 14:41:58.754910 processId: 2109479
+2024-07-15 14:41:58.754945 prarent processId: 586877
+2024-07-15 14:41:58.755253 {
+    "data_root": "/data/lingfeng/ffdv_phase1_sample",
+    "num_frames": 32,
+    "num_workers": 3,
+    "pretrained_dir": "checkpoints/swin_base_patch244_window1677_kinetics400_22k_host.pth",
+    "classify_drop": 0.1,
+    "swin_drop": 0.4,
+    "num_hiddens": 256,
+    "batch_size": 12,
+    "use_cuda": true,
+    "l2_decacy": 1e-06,
+    "log_step": 5,
+    "epochs": 50,
+    "learning_rate": 0.0001
+}
+2024-07-15 14:42:07.443241 模型总大小为：451.744MB
+2024-07-15 14:42:07.443272 (355674408, 88918602, 118013952, 14751744, 451.74442291259766)
+2024-07-15 14:42:07.783877 [INFO] Start training, lr = 0.0001
