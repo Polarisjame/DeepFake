@@ -95,6 +95,7 @@ class DeepFakeSet():
                                         num_replicas=self.world_size,
                                         rank=self.rank) 
             dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, sampler=sampler)
+        return dataloader
 
     def test_dataloader(self):
         return 0
