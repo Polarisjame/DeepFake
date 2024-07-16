@@ -16,8 +16,9 @@ from operator import mul
 from einops import rearrange
 
 import logging
-from mmcv.utils import get_logger
-from mmcv.runner import load_checkpoint
+from mmengine import Config, DictAction
+# from .mmaction.models import build_model
+# from mmcv.runner import get_dist_info, init_dist, load_checkpoint
 
 
 def get_root_logger(log_file=None, log_level=logging.INFO):
@@ -706,7 +707,7 @@ class PoolingMLP(nn.Module):
         super().__init__()
         self.softmax = nn.Softmax(-1)
         self.Pooling = PoolingMethod
-        self.CNN = nn.Conv3d(1024,512,[16,7,7])
+        self.CNN = nn.Conv3d(in_feature,512,[16,7,7])
         if PoolingMethod == 'CNN':
             in_feature=512
         self.mlp = Mlp(in_feature,num_hidden,num_classes,drop=args.classify_drop)
@@ -727,10 +728,10 @@ class VideoClassifier(nn.Module):
                  pretrained2d=True,
                  patch_size=(2,4,4),
                  in_chans=3,
-                 embed_dim=128,
-                 depths=[2, 2, 18, 2],
-                 num_heads=[4, 8, 16, 32],
-                 window_size=(16,7,7),
+                 embed_dim=96,
+                 depths=[2, 2, 6, 2],
+                 num_heads=[3, 6, 12, 24],
+                 window_size=(2,7,7),
                  mlp_ratio=4.,
                  qkv_bias=True,
                  qk_scale=None,
@@ -745,26 +746,32 @@ class VideoClassifier(nn.Module):
                  num_classes=2,
                  pretrain_dir = r'checkpoints/swin_base_patch244_window1677_kinetics400_22k_host.pth'):
         super().__init__()
-        pretrain_dir = args.video_pretrained_dir
-        videoSwinT = SwinTransformer3D(embed_dim=embed_dim, 
-                                        depths=depths, 
-                                        num_heads=num_heads, 
-                                        patch_size=patch_size, 
-                                        window_size=window_size, 
-                                        drop_path_rate=args.swin_drop, 
-                                        patch_norm=True)
-        checkpoint = torch.load(pretrain_dir)
+        config = args.video_pretrained_cfg
+        checkpoint = args.video_pretrained_dir
+        
+        # cfg = Config.fromfile(config)
+        # model = build_model(cfg.model, train_cfg=None, test_cfg=cfg.get('test_cfg'))
+        # load_checkpoint(model, checkpoint, map_location='cpu')
 
+        pretrain_ckpt = torch.load(checkpoint)
+        
         new_state_dict = OrderedDict()
-        for k, v in checkpoint['state_dict'].items():
+        for k, v in pretrain_ckpt['state_dict'].items():
             if 'backbone' in k:
                 name = k[9:]
                 new_state_dict[name] = v 
 
+        videoSwinT = SwinTransformer3D(embed_dim=96, 
+                                        depths=[2, 2, 18, 2], 
+                                        num_heads=[3, 6, 12, 24], 
+                                        patch_size=(2,4,4), 
+                                        window_size=(8,7,7), 
+                                        drop_path_rate=0.4, 
+                                        patch_norm=True)
         videoSwinT.load_state_dict(new_state_dict) 
         self.videoSwinT = videoSwinT
         num_hiddens = args.num_hiddens
-        self.classsifier = PoolingMLP(args, 1024, num_hiddens, num_classes)
+        self.classsifier = PoolingMLP(args, 768, num_hiddens, num_classes)
     
     def forward(self, x):
         vst_out = self.videoSwinT(x) # B C D H W B 1024 16 7 7

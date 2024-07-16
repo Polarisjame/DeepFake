@@ -1,5 +1,5 @@
 import os
-from src.video_swin_transformer import *
+import torch
 from torch.nn import BCELoss,BCEWithLogitsLoss,CrossEntropyLoss
 from torch.optim import AdamW, lr_scheduler, SGD, RMSprop
 from src.utils import Logger, AverageMeter
@@ -62,6 +62,23 @@ class Trainer():
             'acc':acc
         }
     
+    def eval(self, dataloader, epoch, t, lr):
+        logger = self.logger
+        loss_stat = AverageMeter()
+        with torch.no_grad():
+            for iter_id, batch in enumerate(dataloader):
+                video_feat,label = batch
+                video_feat = video_feat.to(self.device)
+                label = label.to(self.device)
+                run_stats = self.run_batch(video_feat, label)
+                loss = run_stats['loss']
+                logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Val Loss {:3.5f} | Val Acc {:1.5f} '.format(epoch, t, lr,
+                                                                                                            loss, run_stats['acc']))
+                loss_stat.update(loss) 
+                t+=1  
+            logger(f'Phase:val, Avg Loss:{loss_stat.avg}')
+            loss_stat.reset()
+        return t 
     def train(self, dataset:DeepFakeSet):
         trainloader = dataset.train_dataloader()
         valloader = dataset.val_dataloader()
@@ -82,27 +99,26 @@ class Trainer():
                     self.model.eval()
                     self.model.to(self.device)
                     torch.cuda.empty_cache()
+                    self.eval(dataloader,epoch,t,lr)
+                    continue
                 for iter_id, batch in enumerate(dataloader):
                     video_feat,label = batch
                     video_feat = video_feat.to(self.device)
                     label = label.to(self.device)
                     run_stats = self.run_batch(video_feat, label)
                     loss = run_stats['loss']
-                    if phase == 'train':
-                        self.optimizer.zero_grad()
-                        loss.backward()
-                        self.optimizer.step()                    
-                        if t % self.log_step == 0:
-                            logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Train Loss {:3.5f} | Train Acc {:1.5f} '.format(epoch, t, lr,
-                                                                                                        loss, run_stats['acc']))
-                    else:
-                        logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Val Loss {:3.5f} | Val Acc {:1.5f} '.format(epoch, t, lr,
-                                                                                                        loss, run_stats['acc']))   
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()                    
+                    if t % self.log_step == 0:
+                        logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Train Loss {:3.5f} | Train Acc {:1.5f} '.format(epoch, t, lr,
+                                                                                                    loss, run_stats['acc']))
                     t+=1
                     loss_stat.update(loss)
                 logger(f'Phase:{phase}, Avg Loss:{loss_stat.avg}')
                 loss_stat.reset()
+            self.scheduler.step()
             if epoch % self.model_save == 0:
-                torch.save(self.model.state_dict(), "./checkpoints/VST_deepfake_epoch{:d}.pth".format(epoch))
+                torch.save(self.model.state_dict(), f"./checkpoints/VST_deepfake_modality{self.modality}_batch{self.batch_size}_epoch{epoch}.pth")
 
                     

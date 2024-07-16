@@ -1,14 +1,16 @@
+import os
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0' # Visible Cuda Devices
+
 from data.data_process import DeepFakeSet
 from src.trainer import Trainer
 from config import get_opt
+# from src.VST.video_swin_transformer import VideoClassifier
 from src.video_swin_transformer import VideoClassifier
 from src.swin_transformer2d import SwinTransformerV2
 import json
 from torch import cuda
-import os
 from src.utils import Logger, load_pretrained
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3' # Visible Cuda Devices
 
 def train(args, logger):
     if args.modality == 'video':
@@ -24,7 +26,7 @@ def train(args, logger):
 
 if __name__ == '__main__':
     opt = get_opt()
-    logger = Logger(f'./logs/deepFake_Full_Modality{opt.modality}_lr{opt.learning_rate:.1e}_batch{opt.batch_size}.log')
+    logger = Logger(opt.log_dir)
     logger(f'processId: {os.getpid()}')
     logger(f'prarent processId: {os.getppid()}')
     logger(json.dumps(opt.__dict__, indent=4))

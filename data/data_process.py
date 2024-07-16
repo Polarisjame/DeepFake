@@ -43,7 +43,7 @@ class DeepFake(data.Dataset):
                 if not os.path.exists(extract_audio_img_path):
                     os.mkdir(extract_audio_img_path)
                 logger("Processing Audio File!")
-                # thread_num = 3
+                # thread_num = 2
                 # split_size = len(self.filepaths) // thread_num
                 # sub_lists = [self.filepaths[i:i+split_size] for i in range(0, len(self.filepaths), split_size)]
                 # remain_size = len(self.filepaths) - len(sub_lists)*split_size
@@ -53,7 +53,7 @@ class DeepFake(data.Dataset):
                 # threads = []
                 
                 # for thread_index,sub_list in enumerate(sub_lists):
-                #     t = threading.Thread(target=process_list, args=(sub_list,extract_audio_img_path))
+                #     t = threading.Thread(target=process_list, args=(sub_list,extract_audio_img_path,logger))
                 #     threads.append(t)
                 #     t.start()
                 #     logger(f"Thread{thread_index} Start!")
@@ -61,9 +61,18 @@ class DeepFake(data.Dataset):
                 #     t.join()
                 #     logger(f"Thread{thread_index} Finished!")
 
-                for video_path in self.filepaths:
+                for index, video_path in enumerate(self.filepaths):
+                    target_dir = os.path.join(extract_audio_img_path,video_path.split('/')[-1][:-4] + '.jpg')
+                    if os.path.exists(target_dir):
+                        continue
+                    if index % 100 == 0:
+                        rate = int(index/len(self.filepaths)*100)
+                        if train:
+                            logger("Train:["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(self.filepaths)})")
+                        else:
+                            logger("Val: ["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(self.filepaths)})")
                     mel_spectrogram_image = generate_mel_spectrogram(video_path)
-                    cv2.imwrite(os.path.join(extract_audio_img_path,video_path.split('/')[-1][:-4] + '.jpg'), mel_spectrogram_image)
+                    cv2.imwrite(target_dir, mel_spectrogram_image)
                 logger("Processing Complete")
             else:
                 logger("Audio File Has Previously Been Processed")

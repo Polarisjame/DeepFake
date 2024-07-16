@@ -1,4 +1,5 @@
 import os
+import random
 import threading
 import cv2
 import numpy as np
@@ -40,9 +41,9 @@ def preprocess_frames(frames,target_size):
     
     return np.array(preprocessed_frames)
 
-def generate_mel_spectrogram(video_path, n_mels=128, fmax=8000, target_size=(224, 224)):
+def generate_mel_spectrogram(video_path, thread_id=0, n_mels=128, fmax=8000, target_size=(224, 224)):
     # 提取音频
-    audio_path = 'extracted_audio.wav'
+    audio_path = f'extracted_audio_{thread_id}.wav'
     video = mp.VideoFileClip(video_path)
     video.audio.write_audiofile(audio_path, verbose=False, logger=None)
 
@@ -185,8 +186,15 @@ def load_pretrained(config, model, logger):
     del checkpoint
     torch.cuda.empty_cache()
 
-def process_list(items,extract_audio_img_path):
+def process_list(items,extract_audio_img_path, logger):
     # 创建5个线程，每个线程处理一个列表项
-    for video_path in items:
-        mel_spectrogram_image = generate_mel_spectrogram(video_path)
-        cv2.imwrite(os.path.join(extract_audio_img_path,video_path.split('/')[-1][:-4] + '.jpg'), mel_spectrogram_image)
+    thread_id = threading.current_thread().ident + random.randint(1, 1000)
+    for index,video_path in enumerate(items):
+        target_dir = os.path.join(extract_audio_img_path,video_path.split('/')[-1][:-4] + '.jpg')
+        if os.path.exists(target_dir):
+            continue
+        mel_spectrogram_image = generate_mel_spectrogram(video_path, thread_id)
+        if index % 100 == 0:
+            rate = int(index/len(items)*100)
+            logger(f"Thread:{thread_id} ["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(items)})")
+        cv2.imwrite(os.path.join(target_dir), mel_spectrogram_image)
