@@ -4,9 +4,12 @@ import threading
 import cv2
 import numpy as np
 from datetime import datetime
+import tensorflow as tf
 import moviepy.editor as mp
 import torch
 import librosa
+
+REF_SEC=5
 
 def extract_frames(video_path, num_frames):
     # 打开视频文件
@@ -66,6 +69,55 @@ def generate_mel_spectrogram(video_path, thread_id=0, n_mels=128, fmax=8000, tar
     img_resized = cv2.resize(S_dB_normalized, target_size, interpolation=cv2.INTER_LINEAR)
 
     return img_resized
+
+def generate_sample_wave(video_path, 
+                         sample_rate=22050,
+                         stft_length=0.032,
+                         stft_step=0.016,
+                         mel_bins=80,
+                         mel_lower_edge_hertz=80.,
+                         mel_upper_edge_hertz=7600.,
+                         mel_num_bins=40):
+    audio_path = f'extracted_audio_A.wav'
+    video = mp.VideoFileClip(video_path)
+    video.audio.write_audiofile(audio_path, verbose=False, logger=None)
+
+    # 加载音频文件
+    y, sr = librosa.load(audio_path, sr=sample_rate) # 22050*seconds
+    if len(y) < sample_rate*REF_SEC:
+        pad_length = sample_rate*REF_SEC - len(y)
+        audio = np.pad(y, (0, pad_length), mode='constant')
+    else:
+        audio = y[:sample_rate*REF_SEC]
+    mask = (audio != 0)
+    true_index = mask.nonzero()
+    stft_length = int(sample_rate * stft_length)
+    stft_step = int(sample_rate * stft_step)
+    tensor_y = torch.tensor(audio, dtype=torch.float32)
+    stfts = tf.signal.stft(tensor_y[true_index],
+                        frame_length=stft_length,
+                        frame_step=stft_step,
+                        fft_length=stft_length,
+                        pad_end=True)
+    spectrogram = tf.abs(stfts)
+    num_spectrogram_bins = spectrogram.shape[-1]
+    mel_sample_rate = sample_rate
+    linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
+        mel_num_bins, num_spectrogram_bins, mel_sample_rate,
+        mel_lower_edge_hertz, mel_upper_edge_hertz)
+    spectrogram = tf.tensordot(spectrogram, linear_to_mel_weight_matrix, 1)
+    spectrogram.set_shape(spectrogram.shape[:-1] +
+                        linear_to_mel_weight_matrix.shape[-1:])
+    spectrogram = torch.from_numpy(spectrogram.numpy())
+    len_pad = 314-spectrogram.shape[0]
+    mask_pad = torch.zeros(314)
+    mask_pad[[i for i in range(spectrogram.shape[0])]]=1
+    pad_dim = spectrogram.shape[1]
+    pad_zro = torch.zeros((len_pad,pad_dim))
+    spectrogram = torch.concat((spectrogram, pad_zro),dim=0)
+    return spectrogram,mask_pad
+    # mask = torch.tensor(mask).unsqueeze(0)
+    
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""

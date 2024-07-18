@@ -5,6 +5,7 @@ from torch.optim import AdamW, lr_scheduler, SGD, RMSprop
 from src.utils import Logger, AverageMeter
 from data.data_process import DeepFakeSet
 from torch.nn.parallel import DataParallel 
+import torch.nn as nn
 
 def getModelSize(model,logger):
     param_size = 0
@@ -21,6 +22,22 @@ def getModelSize(model,logger):
     logger('模型总大小为：{:.3f}MB'.format(all_size))
     return param_size, param_sum, buffer_size, buffer_sum, all_size
 
+def weights_init(model):
+    for m in model.modules():
+        # 判断是否属于Conv2d
+        if isinstance(m, nn.Conv2d):
+            torch.nn.init.xavier_normal_(m.weight.data,gain=1.0)
+            # 判断是否有偏置
+            if m.bias is not None:
+                torch.nn.init.constant_(m.bias.data,0.3)
+        elif isinstance(m, nn.Linear):
+            nn.init.kaiming_normal_(m.weight)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
 class Trainer():
     
     def __init__(self, model, args, device, logger=None) -> None:
@@ -34,6 +51,7 @@ class Trainer():
         else:
             self.logger = logger
         model.cuda()
+        model.apply(weights_init)
         self.model = model
         self.model_save = args.model_save
         
@@ -44,13 +62,21 @@ class Trainer():
         self.log_step = args.log_step
         logger(getModelSize(model, logger))
         
-        self.optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.l2_decacy, betas=(0.9, 0.999))
+        # self.optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.l2_decacy, betas=(0.9, 0.999))
+        if self.modality == 'video':
+            self.optimizer = SGD([
+                {"params":self.model.videoSwinT.parameters(),"lr":args.learning_rate},
+                {"params":self.model.classsifier.parameters(),"lr":1e-3},], momentum=0.9, weight_decay=args.l2_decacy)
+        else:
+            self.optimizer = SGD(self.model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.l2_decacy)
         self.scheduler = lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.train_epochs)
         self.lossF = CrossEntropyLoss()
-        # self.optimizer = SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.l2_decacy)
     
-    def run_batch(self, video_feat, label):
-        model_out = self.model(video_feat)
+    def run_batch(self, video_feat, label, masks):
+        if self.modality == 'paudio':
+            model_out = self.model(video_feat,masks)
+        else:
+            model_out = self.model(video_feat)
         loss = self.lossF(model_out, label)
         with torch.no_grad():
             _, indices = torch.max(model_out.to('cpu'), dim=1)
@@ -70,7 +96,13 @@ class Trainer():
                 video_feat,label = batch
                 video_feat = video_feat.to(self.device)
                 label = label.to(self.device)
-                run_stats = self.run_batch(video_feat, label)
+                if self.modality == 'paudio':
+                    feature = video_feat[:,:,:-1]
+                    mask = video_feat[:,:,-1]
+                else:
+                    feature = video_feat
+                    mask = None
+                run_stats = self.run_batch(feature, label, mask)
                 loss = run_stats['loss']
                 logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Val Loss {:3.5f} | Val Acc {:1.5f} '.format(epoch, t, lr,
                                                                                                             loss, run_stats['acc']))
@@ -102,10 +134,15 @@ class Trainer():
                     self.eval(dataloader,epoch,t,lr)
                     continue
                 for iter_id, batch in enumerate(dataloader):
-                    video_feat,label = batch
+                    if self.modality == 'paudio':
+                        video_feat,label,masks = batch
+                        masks=masks.to(self.device)
+                    else:
+                        video_feat,label = batch
+                        masks = None
                     video_feat = video_feat.to(self.device)
                     label = label.to(self.device)
-                    run_stats = self.run_batch(video_feat, label)
+                    run_stats = self.run_batch(video_feat, label, masks)
                     loss = run_stats['loss']
                     self.optimizer.zero_grad()
                     loss.backward()

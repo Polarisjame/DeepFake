@@ -704,21 +704,44 @@ class SwinTransformer3D(nn.Module):
 class PoolingMLP(nn.Module):
 
     def __init__(self, args, in_feature, num_hidden=128, num_classes=2, PoolingMethod='mean') -> None:
-        super().__init__()
+        super(PoolingMLP,self).__init__()
         self.softmax = nn.Softmax(-1)
         self.Pooling = PoolingMethod
-        self.CNN = nn.Conv3d(in_feature,512,[16,7,7])
+        classify_drop = args.classify_drop
+        # self.CNN = nn.Conv3d(in_feature,512,[16,7,7])
         if PoolingMethod == 'CNN':
-            in_feature=512
+            in_feature=768
+            self.time_pool = nn.MaxPool3d([16,1,1])
+            self.downsample = nn.Sequential(
+                nn.Conv2d(in_feature,512,kernel_size=3),
+                nn.BatchNorm2d(512),
+                nn.Conv2d(512, 128, 3),
+                nn.BatchNorm2d(128),
+                nn.Conv2d(128, 32, 3),
+                nn.BatchNorm2d(32),
+                nn.GELU()
+            )
+            self.projection = nn.Sequential(
+                nn.Linear(32, 512),
+                nn.GELU(),
+                nn.Dropout(classify_drop),
+                nn.Linear(512, 64),
+                nn.GELU(),
+                nn.Dropout(classify_drop),
+                nn.Linear(64,num_classes)
+            )
         self.mlp = Mlp(in_feature,num_hidden,num_classes,drop=args.classify_drop)
     
     def forward(self, x):
         if self.Pooling == 'mean':
             feat = x.mean(dim=[2,3,4]) # [batch_size, hidden_dim]
+            feat = self.mlp(feat)
         elif self.Pooling == 'CNN':
-            feat = torch.squeeze(self.CNN(x))
+            feat = torch.squeeze(self.time_pool(x))
+            # print(feat.shape)
+            feat = torch.squeeze(self.downsample(feat))
+            feat = self.projection(feat)
         # print(feat.shape)
-        feat = self.mlp(feat)
         return self.softmax(feat)
     
 class VideoClassifier(nn.Module):
@@ -745,7 +768,7 @@ class VideoClassifier(nn.Module):
                  num_hiddens=128, 
                  num_classes=2,
                  pretrain_dir = r'checkpoints/swin_base_patch244_window1677_kinetics400_22k_host.pth'):
-        super().__init__()
+        super(VideoClassifier,self).__init__()
         config = args.video_pretrained_cfg
         checkpoint = args.video_pretrained_dir
         
@@ -771,7 +794,7 @@ class VideoClassifier(nn.Module):
         videoSwinT.load_state_dict(new_state_dict) 
         self.videoSwinT = videoSwinT
         num_hiddens = args.num_hiddens
-        self.classsifier = PoolingMLP(args, 768, num_hiddens, num_classes)
+        self.classsifier = PoolingMLP(args, 768, num_hiddens, num_classes, 'CNN')
     
     def forward(self, x):
         vst_out = self.videoSwinT(x) # B C D H W B 1024 16 7 7
