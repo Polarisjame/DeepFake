@@ -690,17 +690,41 @@ class SwinTransformer3D(nn.Module):
         super(SwinTransformer3D, self).train(mode)
         self._freeze_stages()
 
-# def PoolingLayer(x:torch.Tensor, num_classes):
-#     feat = x.mean(dim=[2,3,4]) # [batch_size, hidden_dim]
+# class SelfAttention(nn.Module):
+#     def __init__(self, emb_size: int = 768, num_heads: int = 8, dropout: float = 0.1, seq_len: int = 197,num_classes=2):
+#         super().__init__()
+#         self.emb_size = emb_size
+#         self.num_heads = num_heads
+#         self.keys = nn.Linear(emb_size, emb_size)
+#         self.queries = nn.Linear(emb_size, emb_size)
+#         self.values = nn.Linear(emb_size, emb_size)
+#         self.att_drop = nn.Dropout(dropout)
+#         self.projection = Mlp(emb_size,256,out_features=num_classes,drop=dropout)
+#         self.scaling = (self.emb_size // num_heads) ** -0.5  # emb_size = embeddingsize * num_heads
+#         self.W = nn.Parameter(torch.randn(seq_len,seq_len))
+#         self.Norm = nn.LayerNorm([seq_len,seq_len])
+#     def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+#         queries = rearrange(self.queries(x), "b n (h d) -> b h n d", h=self.num_heads)
+#         keys = rearrange(self.keys(x), "b n (h d) -> b h n d", h=self.num_heads)
+#         values = rearrange(self.values(x), "b n (h d) -> b h n d", h=self.num_heads)
 
-#     # project
-#     batch_size, hidden_dim = feat.shape
-#     feat_dim = 512
-#     proj = nn.Parameter(torch.randn(hidden_dim, feat_dim))
+#         x0 = rearrange(x, "b n (h d) -> b h n d", h=self.num_heads)
+#         energy = torch.einsum('bhqd, bhkd -> bhqk', queries, keys)  # batch, num_heads, query_len, key_len
+#         if mask is not None:
+#             fill_value = torch.finfo(torch.float32).min
+#             energy.mask_fill(~mask, fill_value)
 
-#     # final output
-#     output = feat @ proj # [batch_size, feat_dim]
-#     return output
+#         att = F.softmax(energy * self.scaling, dim=-1)
+#         att = self.Norm(self.W * att)
+#         # att = torch.einsum('bhqk,bhv -> bhqk', att, w)
+#         att = self.att_drop(att)
+#         # sum up over the third axis
+#         out = torch.einsum('bhal, bhlv -> bhav ', att, values)
+#         out = rearrange(out, "b h n d -> b n (h d)")
+#         out = self.projection(out)
+#         print(out, out.shape)
+#         return out
+    
 class PoolingMLP(nn.Module):
 
     def __init__(self, args, in_feature, num_hidden=128, num_classes=2, PoolingMethod='mean') -> None:
@@ -730,9 +754,23 @@ class PoolingMLP(nn.Module):
                 nn.Dropout(classify_drop),
                 nn.Linear(64,num_classes)
             )
+        elif PoolingMethod == 'Attention':
+            self.downsample = nn.Sequential(
+                nn.Conv2d(in_feature,512,kernel_size=3),
+                nn.BatchNorm2d(512),
+                nn.Conv2d(512, 512, 5),
+                nn.BatchNorm2d(512),
+                nn.GELU()
+            )
+            encoder = nn.TransformerEncoderLayer(512,activation="gelu",dropout=classify_drop,nhead=8)
+            self.selfAttention = nn.TransformerEncoder(encoder,6)
+            self.cls = nn.Parameter(torch.randn(1,1,512))
+            self.pos_embedding = nn.Parameter(torch.randn(1, 16+1, 512))
+            self.projection = Mlp(512,256,num_classes,drop=classify_drop)
         self.mlp = Mlp(in_feature,num_hidden,num_classes,drop=args.classify_drop)
     
     def forward(self, x):
+        b, _, _, _, _ = x.shape
         if self.Pooling == 'mean':
             feat = x.mean(dim=[2,3,4]) # [batch_size, hidden_dim]
             feat = self.mlp(feat)
@@ -741,6 +779,17 @@ class PoolingMLP(nn.Module):
             # print(feat.shape)
             feat = torch.squeeze(self.downsample(feat))
             feat = self.projection(feat)
+        elif self.Pooling == 'Attention':
+            x = rearrange(x, 'b c d h w -> (b d) c h w')
+            x = self.downsample(x)
+            x = torch.squeeze(x)
+            x = rearrange(x, '(b d) c -> b d c',b=b)
+            
+            cls_tokens = self.cls.repeat((b,1,1))
+            x = torch.cat((cls_tokens, x), dim=1)
+            x += self.pos_embedding
+            feat = self.selfAttention(x)
+            feat = self.projection(feat[:,0,:])
         # print(feat.shape)
         return self.softmax(feat)
     
@@ -794,7 +843,7 @@ class VideoClassifier(nn.Module):
         videoSwinT.load_state_dict(new_state_dict) 
         self.videoSwinT = videoSwinT
         num_hiddens = args.num_hiddens
-        self.classsifier = PoolingMLP(args, 768, num_hiddens, num_classes, 'CNN')
+        self.classsifier = PoolingMLP(args, 768, num_hiddens, num_classes, args.video_pool)
     
     def forward(self, x):
         vst_out = self.videoSwinT(x) # B C D H W B 1024 16 7 7

@@ -614,6 +614,7 @@ class SwinTransformerV2(nn.Module):
             x = layer(x)
 
         x = self.norm(x)  # B L C
+        print(x.shape)
         x = self.avgpool(x.transpose(1, 2))  # B C 1
         x = torch.flatten(x, 1)
         return x

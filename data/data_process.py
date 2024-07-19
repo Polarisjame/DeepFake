@@ -136,7 +136,7 @@ class DeepFake(data.Dataset):
             # mask = comb[:,-1]
         # label_tensor = torch.zeros(2)
         # label_tensor[label] = 1
-        return feature, label
+        return feature, label, file_root
 
     def __len__(self):
         return len(self.filepaths)
