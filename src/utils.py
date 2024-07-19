@@ -8,6 +8,7 @@ import tensorflow as tf
 import moviepy.editor as mp
 import torch
 import librosa
+import matplotlib.pyplot as plt
 
 REF_SEC=5
 
@@ -118,7 +119,20 @@ def generate_sample_wave(video_path,
     return spectrogram,mask_pad
     # mask = torch.tensor(mask).unsqueeze(0)
     
+class Drawer(object):
+    def __init__(self):
+        self.reset()
 
+    def reset(self):
+        self.log_list = []
+
+    def update(self, val, n=1):
+        self.log_list.append(val)
+        
+    def draw(self):
+        length = len(self.log_list)
+        plt.plot(length,self.log_list)
+        
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):

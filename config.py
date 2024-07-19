@@ -17,7 +17,7 @@ def get_opt():
     parser.add_argument('--classify_drop', type=float, default=0.1, help='MLP_dropout_rate')
     parser.add_argument('--swin_drop', type=float, default=0.1, help='VST_dropout_rate')
     parser.add_argument('--num_hiddens', type=int, default=128, help='Hidden Num of Classifier')
-    
+    parser.add_argument('--video_pool', type=str, help='VST Pool Method')
     # Learning
     parser.add_argument('-b', '--batch_size', type=int, default=8, help='input batch size for training (default: 32)')
     parser.add_argument('-cuda', '--use_cuda', type=bool, default=True, help='Use cuda or not')
