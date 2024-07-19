@@ -1,16 +1,16 @@
 #! /bin/bash
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=3
 
 # -------------------DeepFake Training Shell Script--------------------
 
 if true; then
-  sample=false
-  if !sample; then
-    data_root = '/data/lingfeng/full_data/phase1'
+  sample=true
+  if ${sample}; then
+    data_root='/data/lingfeng/ffdv_phase1_sample'
   else
-    data_root = '/data/lingfeng/ffdv_phase1_sample'
+    data_root='/data/lingfeng/full_data/phase1'
   fi
-  modality=audio
+  modality=video # video audio paudio
   num_frames=32
 
   # pretrain
@@ -22,13 +22,12 @@ if true; then
   swin_drop=0.4
   num_hiddens=128
   batch_size=8
-  l2_decacy=0.05
+  l2_decacy=0.001
   epochs=50
-  learning_rate=1e-5
+  learning_rate=5e-4
   model_save=5
 
   nohup python3 -u train.py \
-    --force_generate\
     --data_root ${data_root}\
     --modality ${modality}\
     --num_frames ${num_frames}\
@@ -46,3 +45,5 @@ if true; then
     --log_dir logs/DF_Sample:${sample}_Modality:${modality}_Batch:${batch_size}.log\
     >logs/error_out_DF_Sample:${sample}_Modality:${modality}_Batch:${batch_size}.log 2>&1 &
 fi
+
+    # --force_generate\

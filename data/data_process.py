@@ -83,7 +83,33 @@ class DeepFake(data.Dataset):
                         T.RandomVerticalFlip(),
                         T.ToTensor(),
                         T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            
         ])
+        elif self.modality == 'paudio':
+            if train:
+                extract_audio_tensor_path = os.path.join(root, 'trainAudioTensors')
+            else:
+                extract_audio_tensor_path = os.path.join(root, 'ValAudioTensors')
+            if not os.path.exists(extract_audio_tensor_path) or args.force_generate:
+                if not os.path.exists(extract_audio_tensor_path):
+                    os.mkdir(extract_audio_tensor_path)
+                logger("Processing Pure Audio File!")
+                for index, video_path in enumerate(self.filepaths):
+                    target_dir = os.path.join(extract_audio_tensor_path,video_path.split('/')[-1][:-4] + '.pt')
+                    if os.path.exists(target_dir):
+                        continue
+                    if index % 100 == 0:
+                        rate = int(index/len(self.filepaths)*100)
+                        if train:
+                            logger("Train:["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(self.filepaths)})")
+                        else:
+                            logger("Val: ["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(self.filepaths)})")
+                    mel_spectrogram_tensor, mask = generate_sample_wave(video_path)
+                    comb = torch.concat((mel_spectrogram_tensor,mask.unsqueeze(1)),dim=1)
+                    torch.save(comb, target_dir)
+            else:
+                logger("Audio File Has Previously Been Processed")
+            self.paudio_path = extract_audio_tensor_path
 
     def __getitem__(self, index):
         """
@@ -91,6 +117,7 @@ class DeepFake(data.Dataset):
         """
         file_root = self.filepaths[index]
         label = self.video_dict[file_root.split('/')[-1]]
+        mask = None
         # print(img_path)
         if self.modality== 'video':
             video_feature_row = extract_frames(file_root, self.num_frames)
@@ -102,6 +129,11 @@ class DeepFake(data.Dataset):
             img = Image.open(img_path).convert('RGB')
             img = self.transform(img)
             feature = img
+        elif self.modality== 'paudio':
+            tensor_path = os.path.join(self.paudio_path , file_root.split('/')[-1][:-4] + '.pt')
+            feature = torch.load(tensor_path)
+            # feature = comb[:,:-1]
+            # mask = comb[:,-1]
         # label_tensor = torch.zeros(2)
         # label_tensor[label] = 1
         return feature, label

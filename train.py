@@ -7,6 +7,7 @@ from config import get_opt
 # from src.VST.video_swin_transformer import VideoClassifier
 from src.video_swin_transformer import VideoClassifier
 from src.swin_transformer2d import SwinTransformerV2
+from src.audioTransformer import Audio2D
 import json
 from torch import cuda
 from src.utils import Logger, load_pretrained
@@ -18,6 +19,8 @@ def train(args, logger):
     elif args.modality == 'audio':
         model = SwinTransformerV2(num_classes=2, pretrained_window_sizes=(16,16,16,16))
         load_pretrained(args, model, logger)
+    elif args.modality == 'paudio':
+        model = Audio2D(args, num_classes=2)
     data = DeepFakeSet(args, logger=logger)
     data.setup()
     device = 'cuda' if cuda.is_available() else 'cpu'
