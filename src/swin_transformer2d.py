@@ -581,7 +581,9 @@ class SwinTransformerV2(nn.Module):
 
         self.norm = norm_layer(self.num_features)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
-        self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = Mlp(self.num_features, 256, self.num_classes)
+        self.active = nn.Sigmoid()
+        # self.active = nn.Softmax(dim=-1)
 
         self.apply(self._init_weights)
         for bly in self.layers:
@@ -614,16 +616,20 @@ class SwinTransformerV2(nn.Module):
             x = layer(x)
 
         x = self.norm(x)  # B L C
-        print(x.shape)
         x = self.avgpool(x.transpose(1, 2))  # B C 1
         x = torch.flatten(x, 1)
         return x
 
     def forward(self, x):
         x = self.forward_features(x)
-        x = self.head(x)
-        return x
-
+        x_class = self.active(self.head(x))
+        return torch.squeeze(x_class), x
+    
+    def commonspace_proj(self, x:torch.Tensor):
+        # x:[B, L, C] -> [B, C]
+        # LSE Pooling
+        return torch.logsumexp(x.transpose(1,2),dim=-1)
+    
     def flops(self):
         flops = 0
         flops += self.patch_embed.flops()

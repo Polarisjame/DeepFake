@@ -4,6 +4,7 @@ def get_opt():
     parser = argparse.ArgumentParser(description="Deepfake")
     
     # DATA
+    parser.add_argument('--skip_learning', action='store_true', help='skip train stage and get submission')
     parser.add_argument('--data_root', type=str, default=r'/data/lingfeng/full_data/phase1')
     parser.add_argument('--modality', type=str, default='audio')
     parser.add_argument('--num_frames', type=int, default=32, help='extract fixed number of frames')
@@ -12,12 +13,15 @@ def get_opt():
     
     # Model
     parser.add_argument('--video_pretrained_dir', type=str, default='checkpoints/swin_small_patch244_window877_kinetics400_1k.pth')
-    parser.add_argument('--video_pretrained_cfg', type=str, default='./configs/recognition/swin/swin_small_patch244_window877_kinetics400_1k.py')
     parser.add_argument('--audio_pretrained_dir', type=str, default='checkpoints/swinv2_tiny_patch4_window16_256.pth')
     parser.add_argument('--classify_drop', type=float, default=0.1, help='MLP_dropout_rate')
     parser.add_argument('--swin_drop', type=float, default=0.1, help='VST_dropout_rate')
     parser.add_argument('--num_hiddens', type=int, default=128, help='Hidden Num of Classifier')
     parser.add_argument('--video_pool', type=str, help='VST Pool Method')
+    parser.add_argument('--audio_ckpt_path',type=str,default=None)
+    parser.add_argument('--vedio_ckpt_path',type=str,default=None)
+    parser.add_argument('--Resume', action='store_true', help='resume model from ckpt')
+
     # Learning
     parser.add_argument('-b', '--batch_size', type=int, default=8, help='input batch size for training (default: 32)')
     parser.add_argument('-cuda', '--use_cuda', type=bool, default=True, help='Use cuda or not')

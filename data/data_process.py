@@ -14,7 +14,7 @@ import threading
 
 class DeepFake(data.Dataset):
 
-    def __init__(self, root, args, transforms=None, train=True, logger=None):
+    def __init__(self, root, args, event: threading.Event, transforms=None, train=True, logger=None):
         """
         主要目标： 获取所有图片的地址，并根据训练，验证，测试划分数据
         """
@@ -34,6 +34,14 @@ class DeepFake(data.Dataset):
         self.label_raw = label_raw
         self.num_frames = args.num_frames
         self.modality = args.modality
+        self.target_size = 224
+        self.transform = T.Compose([
+                        T.Resize((self.target_size, self.target_size)),
+                        T.RandomHorizontalFlip(),
+                        T.RandomVerticalFlip(),
+                        T.ToTensor(),
+                        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
+                        ])
         if self.modality == 'audio':
             if train:
                 extract_audio_img_path = os.path.join(root, 'trainAudioImgs')
@@ -78,13 +86,12 @@ class DeepFake(data.Dataset):
                 logger("Audio File Has Previously Been Processed")
             self.audio_path = extract_audio_img_path
             self.transform = T.Compose([
-                        T.Resize((224, 224)),
+                        T.Resize((self.target_size, self.target_size)),
                         T.RandomHorizontalFlip(),
                         T.RandomVerticalFlip(),
                         T.ToTensor(),
-                        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            
-        ])
+                        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
+                        ])
         elif self.modality == 'paudio':
             if train:
                 extract_audio_tensor_path = os.path.join(root, 'trainAudioTensors')
@@ -120,10 +127,7 @@ class DeepFake(data.Dataset):
         mask = None
         # print(img_path)
         if self.modality== 'video':
-            video_feature_row = extract_frames(file_root, self.num_frames)
-            video_feature = preprocess_frames(video_feature_row, 224)
-            video_feature = torch.tensor(video_feature,dtype=torch.float32).view(3,-1,224,224)
-            feature = video_feature
+            feature = extract_frames(file_root, self.num_frames, self.target_size, self.transform)
         elif self.modality== 'audio':
             img_path = os.path.join(self.audio_path , file_root.split('/')[-1][:-4] + '.jpg')
             img = Image.open(img_path).convert('RGB')
@@ -136,7 +140,8 @@ class DeepFake(data.Dataset):
             # mask = comb[:,-1]
         # label_tensor = torch.zeros(2)
         # label_tensor[label] = 1
-        return feature, label, file_root
+        label = torch.tensor(label,dtype=torch.float32)
+        return feature, label, file_root.split('/')[-1]
 
     def __len__(self):
         return len(self.filepaths)
@@ -155,12 +160,12 @@ class DeepFakeSet():
         self.rank = rank
         self.logger = logger
 
-    def setup(self, stage=None):
+    def setup(self, event:threading.Event, stage=None):
         if stage == 'fit' or stage is None:
-            self.trainset = DeepFake(root=self.args.data_root, train=True, args=self.args, logger=self.logger)
+            self.trainset = DeepFake(root=self.args.data_root, train=True, args=self.args, logger=self.logger, event=event)
             # perm = torch.randperm(len(self.trainset))
             # self.trainset = self.trainset[perm]
-            self.valset = DeepFake(root=self.args.data_root, train=False, args=self.args, logger=self.logger)
+            self.valset = DeepFake(root=self.args.data_root, train=False, args=self.args, logger=self.logger, event=event)
         else:
             raise NotImplementedError
 

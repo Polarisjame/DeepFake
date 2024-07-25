@@ -547,7 +547,7 @@ class SwinTransformer3D(nn.Module):
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
             layer = BasicLayer(
-                dim=int(embed_dim * 2**i_layer),
+                dim=int(embed_dim * (2**i_layer)),
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=window_size,
@@ -595,9 +595,24 @@ class SwinTransformer3D(nn.Module):
             logger (logging.Logger): The logger used to print
                 debugging infomation.
         """
+        def _init_weights(m):
+            if isinstance(m, nn.Linear):
+                trunc_normal_(m.weight, std=.02)
+                if isinstance(m, nn.Linear) and m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.constant_(m.bias, 0)
+                nn.init.constant_(m.weight, 1.0)
+        self.apply(_init_weights)
         checkpoint = torch.load(self.pretrained, map_location='cpu')
         state_dict = checkpoint['model']
-
+        
+        # new_dict = OrderedDict()
+        # for k,v in state_dict.items():
+        #     if not "downsample" in k:
+        #         new_dict[k] = v
+        # state_dict = new_dict
+        
         # delete relative_position_index since we always re-init it
         relative_position_index_keys = [k for k in state_dict.keys() if "relative_position_index" in k]
         for k in relative_position_index_keys:
@@ -620,7 +635,7 @@ class SwinTransformer3D(nn.Module):
             L2 = (2*self.window_size[1]-1) * (2*self.window_size[2]-1)
             wd = self.window_size[0]
             if nH1 != nH2:
-                logger.warning(f"Error in loading {k}, passing")
+                logger(f"Error in loading {k}, passing")
             else:
                 if L1 != L2:
                     S1 = int(L1 ** 0.5)
@@ -631,8 +646,8 @@ class SwinTransformer3D(nn.Module):
             state_dict[k] = relative_position_bias_table_pretrained.repeat(2*wd-1,1)
 
         msg = self.load_state_dict(state_dict, strict=False)
-        logger.info(msg)
-        logger.info(f"=> loaded successfully '{self.pretrained}'")
+        logger(msg)
+        logger(f"=> loaded successfully '{self.pretrained}'")
         del checkpoint
         torch.cuda.empty_cache()
 
@@ -689,41 +704,6 @@ class SwinTransformer3D(nn.Module):
         """Convert the model into training mode while keep layers freezed."""
         super(SwinTransformer3D, self).train(mode)
         self._freeze_stages()
-
-# class SelfAttention(nn.Module):
-#     def __init__(self, emb_size: int = 768, num_heads: int = 8, dropout: float = 0.1, seq_len: int = 197,num_classes=2):
-#         super().__init__()
-#         self.emb_size = emb_size
-#         self.num_heads = num_heads
-#         self.keys = nn.Linear(emb_size, emb_size)
-#         self.queries = nn.Linear(emb_size, emb_size)
-#         self.values = nn.Linear(emb_size, emb_size)
-#         self.att_drop = nn.Dropout(dropout)
-#         self.projection = Mlp(emb_size,256,out_features=num_classes,drop=dropout)
-#         self.scaling = (self.emb_size // num_heads) ** -0.5  # emb_size = embeddingsize * num_heads
-#         self.W = nn.Parameter(torch.randn(seq_len,seq_len))
-#         self.Norm = nn.LayerNorm([seq_len,seq_len])
-#     def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
-#         queries = rearrange(self.queries(x), "b n (h d) -> b h n d", h=self.num_heads)
-#         keys = rearrange(self.keys(x), "b n (h d) -> b h n d", h=self.num_heads)
-#         values = rearrange(self.values(x), "b n (h d) -> b h n d", h=self.num_heads)
-
-#         x0 = rearrange(x, "b n (h d) -> b h n d", h=self.num_heads)
-#         energy = torch.einsum('bhqd, bhkd -> bhqk', queries, keys)  # batch, num_heads, query_len, key_len
-#         if mask is not None:
-#             fill_value = torch.finfo(torch.float32).min
-#             energy.mask_fill(~mask, fill_value)
-
-#         att = F.softmax(energy * self.scaling, dim=-1)
-#         att = self.Norm(self.W * att)
-#         # att = torch.einsum('bhqk,bhv -> bhqk', att, w)
-#         att = self.att_drop(att)
-#         # sum up over the third axis
-#         out = torch.einsum('bhal, bhlv -> bhav ', att, values)
-#         out = rearrange(out, "b h n d -> b n (h d)")
-#         out = self.projection(out)
-#         print(out, out.shape)
-#         return out
     
 class PoolingMLP(nn.Module):
 
@@ -733,28 +713,7 @@ class PoolingMLP(nn.Module):
         self.Pooling = PoolingMethod
         classify_drop = args.classify_drop
         # self.CNN = nn.Conv3d(in_feature,512,[16,7,7])
-        if PoolingMethod == 'CNN':
-            in_feature=768
-            self.time_pool = nn.MaxPool3d([16,1,1])
-            self.downsample = nn.Sequential(
-                nn.Conv2d(in_feature,512,kernel_size=3),
-                nn.BatchNorm2d(512),
-                nn.Conv2d(512, 128, 3),
-                nn.BatchNorm2d(128),
-                nn.Conv2d(128, 32, 3),
-                nn.BatchNorm2d(32),
-                nn.GELU()
-            )
-            self.projection = nn.Sequential(
-                nn.Linear(32, 512),
-                nn.GELU(),
-                nn.Dropout(classify_drop),
-                nn.Linear(512, 64),
-                nn.GELU(),
-                nn.Dropout(classify_drop),
-                nn.Linear(64,num_classes)
-            )
-        elif PoolingMethod == 'Attention':
+        if PoolingMethod == 'Attention':
             self.downsample = nn.Sequential(
                 nn.Conv2d(in_feature,512,kernel_size=3),
                 nn.BatchNorm2d(512),
@@ -772,13 +731,9 @@ class PoolingMLP(nn.Module):
     def forward(self, x):
         b, _, _, _, _ = x.shape
         if self.Pooling == 'mean':
-            feat = x.mean(dim=[2,3,4]) # [batch_size, hidden_dim]
-            feat = self.mlp(feat)
-        elif self.Pooling == 'CNN':
-            feat = torch.squeeze(self.time_pool(x))
-            # print(feat.shape)
-            feat = torch.squeeze(self.downsample(feat))
-            feat = self.projection(feat)
+            feat = x.mean(dim=[3,4]).transpose(1,2) # [batch_size, D, C]
+            classify = x.mean(dim=[2,3,4])
+            classify = self.mlp(classify)
         elif self.Pooling == 'Attention':
             x = rearrange(x, 'b c d h w -> (b d) c h w')
             x = self.downsample(x)
@@ -789,13 +744,17 @@ class PoolingMLP(nn.Module):
             x = torch.cat((cls_tokens, x), dim=1)
             x += self.pos_embedding
             feat = self.selfAttention(x)
-            feat = self.projection(feat[:,0,:])
+            classify = feat[:,0,:]
+            feat = feat[:,1:,:]
+            classify = self.projection(classify)
         # print(feat.shape)
-        return self.softmax(feat)
+        return classify.squeeze(), feat
+    
     
 class VideoClassifier(nn.Module):
     def __init__(self,
-                 args, 
+                 args,
+                 logger, 
                  pretrained=None,
                  pretrained2d=True,
                  patch_size=(2,4,4),
@@ -818,7 +777,6 @@ class VideoClassifier(nn.Module):
                  num_classes=2,
                  pretrain_dir = r'checkpoints/swin_base_patch244_window1677_kinetics400_22k_host.pth'):
         super(VideoClassifier,self).__init__()
-        config = args.video_pretrained_cfg
         checkpoint = args.video_pretrained_dir
         
         # cfg = Config.fromfile(config)
@@ -826,7 +784,6 @@ class VideoClassifier(nn.Module):
         # load_checkpoint(model, checkpoint, map_location='cpu')
 
         pretrain_ckpt = torch.load(checkpoint)
-        
         new_state_dict = OrderedDict()
         for k, v in pretrain_ckpt['state_dict'].items():
             if 'backbone' in k:
@@ -838,14 +795,20 @@ class VideoClassifier(nn.Module):
                                         num_heads=[3, 6, 12, 24], 
                                         patch_size=(2,4,4), 
                                         window_size=(8,7,7), 
-                                        drop_path_rate=0.4, 
-                                        patch_norm=True)
-        videoSwinT.load_state_dict(new_state_dict) 
+                                        drop_path_rate=0.1, 
+                                        patch_norm=True,
+                                        pretrained=args.video_pretrained_dir)
         self.videoSwinT = videoSwinT
         num_hiddens = args.num_hiddens
-        self.classsifier = PoolingMLP(args, 768, num_hiddens, num_classes, args.video_pool)
-    
+        self.pool = args.video_pool
+        in_feature = 768
+        self.classsifier = PoolingMLP(args, in_feature, num_hiddens, num_classes, args.video_pool)
+        # self.prob = nn.Softmax(dim=-1)
+        self.prob = nn.Sigmoid()
+        
     def forward(self, x):
-        vst_out = self.videoSwinT(x) # B C D H W B 1024 16 7 7
+        vst_out = self.videoSwinT(x) # B C D H W <-> B 1024 16 7 7
         # print(vst_out.shape)
-        return self.classsifier(vst_out)
+        classify, feat = self.classsifier(vst_out)
+        return self.prob(classify), feat
+            
