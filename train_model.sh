@@ -1,5 +1,5 @@
 #! /bin/bash
-export CUDA_VISIBLE_DEVICES=0,4,5
+export CUDA_VISIBLE_DEVICES=4,5
 
 # -------------------DeepFake Training Shell Script--------------------
 
@@ -15,27 +15,27 @@ if true; then
 
   # pretrain
   video_pretrained_dir='checkpoints/swin_small_patch244_window877_kinetics400_1k.pth'
-  video_pretrained_cfg='./configs/recognition/swin/swin_small_patch244_window877_kinetics400_1k.py'
   audio_pretrained_dir='checkpoints/swinv2_base_patch4_window16_256.pth'
   
-  video_pool=Attention
+  batch_size=16
+  video_pool=mean
   classify_drop=0.2
-  swin_drop=0.4
+  swin_drop=0.2
   num_hiddens=256
-  batch_size=24
-  l2_decacy=0.001
-  epochs=50
-  learning_rate=3e-4
-  model_save=10
+  l2_decacy=1e-3
+  epochs=4
+  learning_rate=1e-3
+  model_save=1
   log_step=50
+  audio_ckpt_path='checkpoints/VST_deepfake_modalityaudio_batch48_epoch12.pth'
 
   nohup python3 -u train.py \
     --data_root ${data_root}\
     --modality ${modality}\
     --num_frames ${num_frames}\
     --video_pretrained_dir ${video_pretrained_dir}\
-    --video_pretrained_cfg ${video_pretrained_cfg}\
     --audio_pretrained_dir ${audio_pretrained_dir}\
+    --audio_ckpt_path ${audio_ckpt_path}\
     --classify_drop ${classify_drop}\
     --swin_drop ${swin_drop}\
     --num_hiddens ${num_hiddens}\
@@ -46,8 +46,11 @@ if true; then
     --model_save ${model_save}\
     --log_step ${log_step}\
     --video_pool ${video_pool}\
-    --log_dir logs/DF_Sample:${sample}_Modality:${modality}_Batch:${batch_size}TEST.log\
+    --log_dir logs/DF_Sample:${sample}_Modality:${modality}_Batch:${batch_size}.log\
     >logs/error_out_DF_Sample:${sample}_Modality:${modality}_Batch:${batch_size}.log 2>&1 &
 fi
 
+    # --skip_learning\
+    # --ckpt_path ${ckpt_path}\
     # --force_generate\
+    # --Resume\

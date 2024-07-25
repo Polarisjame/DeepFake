@@ -1,6 +1,7 @@
 import os
 import random
 import threading
+from PIL import Image
 import cv2
 import numpy as np
 from datetime import datetime
@@ -9,41 +10,43 @@ import moviepy.editor as mp
 import torch
 import librosa
 import matplotlib.pyplot as plt
+from torch import nn
 
 REF_SEC=5
 
-def extract_frames(video_path, num_frames):
+def extract_frames(video_path, num_frames, target_size, trans):
     # 打开视频文件
+    frames = torch.zeros(0,3,target_size,target_size, dtype=torch.float32)
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
+
     # 确定提取帧的间隔
     frame_interval = total_frames // num_frames
-    
-    frames = []
     for i in range(num_frames):
         # 设置视频帧位置
         cap.set(cv2.CAP_PROP_POS_FRAMES, i * frame_interval)
         ret, frame = cap.read()
         if ret:
-            frames.append(frame)
+            image = Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)) 
+            image = trans(image)
+            frames=torch.concat((frames, image.unsqueeze(0)), 0)
         else:
             break
     
     cap.release()
     return frames
 
-def preprocess_frames(frames,target_size):
-    preprocessed_frames = []
-    for frame in frames:
-        # 调整帧的大小
-        frame = cv2.resize(frame, (target_size,target_size))
-        # 归一化
-        frame = frame / 255.0
-        # print(frame,frame.shape)
-        preprocessed_frames.append(frame)
+# def preprocess_frames(frames,target_size):
+#     preprocessed_frames = []
+#     for frame in frames:
+#         # 调整帧的大小
+#         frame = cv2.resize(frame, (target_size,target_size))
+#         # 归一化
+#         frame = frame / 255.0
+#         # print(frame,frame.shape)
+#         preprocessed_frames.append(frame)
     
-    return np.array(preprocessed_frames)
+#     return np.array(preprocessed_frames)
 
 def generate_mel_spectrogram(video_path, thread_id=0, n_mels=128, fmax=8000, target_size=(224, 224)):
     # 提取音频
@@ -120,18 +123,21 @@ def generate_sample_wave(video_path,
     # mask = torch.tensor(mask).unsqueeze(0)
     
 class Drawer(object):
-    def __init__(self):
+    def __init__(self, modality, phase):
         self.reset()
-
+        self.modality = modality
+        self.phase = phase
+        
     def reset(self):
         self.log_list = []
 
     def update(self, val, n=1):
-        self.log_list.append(val)
+        self.log_list.append(val.cpu().detach())
         
-    def draw(self):
+    def draw(self, epoch):
         length = len(self.log_list)
-        plt.plot(length,self.log_list)
+        plt.plot([i for i in range(length)],self.log_list)
+        plt.savefig(f"./checkpoints/Modality:{self.modality}_Phase:{self.phase}_Epoch{epoch}.png")
         
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -166,7 +172,7 @@ class Logger():
         
 def load_pretrained(config, model, logger):
     logger(f"==============> Loading weight {config.audio_pretrained_dir} for fine-tuning......")
-    checkpoint = torch.load(config.audio_pretrained_dir, map_location='cuda:0')
+    checkpoint = torch.load(config.audio_pretrained_dir, map_location=torch.device('cpu'))
     state_dict = checkpoint['model']
     # delete relative_position_index since we always re-init it
     relative_position_index_keys = [k for k in state_dict.keys() if "relative_position_index" in k]
@@ -225,24 +231,24 @@ def load_pretrained(config, model, logger):
                 state_dict[k] = absolute_pos_embed_pretrained_resized
 
     # check classifier, if not match, then re-init classifier to zero
-    head_bias_pretrained = state_dict['head.bias']
-    Nc1 = head_bias_pretrained.shape[0]
-    Nc2 = model.head.bias.shape[0]
-    if (Nc1 != Nc2):
-        if Nc1 == 21841 and Nc2 == 1000:
-            logger("loading ImageNet-22K weight to ImageNet-1K ......")
-            map22kto1k_path = f'data/map22kto1k.txt'
-            with open(map22kto1k_path) as f:
-                map22kto1k = f.readlines()
-            map22kto1k = [int(id22k.strip()) for id22k in map22kto1k]
-            state_dict['head.weight'] = state_dict['head.weight'][map22kto1k, :]
-            state_dict['head.bias'] = state_dict['head.bias'][map22kto1k]
-        else:
-            torch.nn.init.constant_(model.head.bias, 0.)
-            torch.nn.init.constant_(model.head.weight, 0.)
-            del state_dict['head.weight']
-            del state_dict['head.bias']
-            logger(f"Error in loading classifier head, re-init classifier head to 0")
+    # head_bias_pretrained = state_dict['head.bias']
+    # Nc1 = head_bias_pretrained.shape[0]
+    # Nc2 = model.head.bias.shape[0]
+    # if (Nc1 != Nc2):
+    #     if Nc1 == 21841 and Nc2 == 1000:
+    #         logger("loading ImageNet-22K weight to ImageNet-1K ......")
+    #         map22kto1k_path = f'data/map22kto1k.txt'
+    #         with open(map22kto1k_path) as f:
+    #             map22kto1k = f.readlines()
+    #         map22kto1k = [int(id22k.strip()) for id22k in map22kto1k]
+    #         state_dict['head.weight'] = state_dict['head.weight'][map22kto1k, :]
+    #         state_dict['head.bias'] = state_dict['head.bias'][map22kto1k]
+    #     else:
+    #         torch.nn.init.constant_(model.head.bias, 0.)
+    #         torch.nn.init.constant_(model.head.weight, 0.)
+    #         del state_dict['head.weight']
+    #         del state_dict['head.bias']
+    #         logger(f"Error in loading classifier head, re-init classifier head to 0")
 
     msg = model.load_state_dict(state_dict, strict=False)
     logger(msg)
@@ -252,15 +258,49 @@ def load_pretrained(config, model, logger):
     del checkpoint
     torch.cuda.empty_cache()
 
-def process_list(items,extract_audio_img_path, logger):
+def process_list(items, event: threading.Event, extract_video_tensor_path, logger, num_frames):
     # 创建5个线程，每个线程处理一个列表项
     thread_id = threading.current_thread().ident + random.randint(1, 1000)
     for index,video_path in enumerate(items):
-        target_dir = os.path.join(extract_audio_img_path,video_path.split('/')[-1][:-4] + '.jpg')
+        if event.is_set():
+            print(f"Tread{thread_id} Stoped Unexpected")
+            break
+        target_dir = os.path.join(extract_video_tensor_path,video_path.split('/')[-1][:-4] + '.pt')
         if os.path.exists(target_dir):
             continue
-        mel_spectrogram_image = generate_mel_spectrogram(video_path, thread_id)
         if index % 100 == 0:
-            rate = int(index/len(items)*100)
-            logger(f"Thread:{thread_id} ["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(items)})")
-        cv2.imwrite(os.path.join(target_dir), mel_spectrogram_image)
+            logger(f"Thread:{thread_id} Processed {index} Files")
+        video_feature_row = extract_frames(video_path, extract_video_tensor_path,num_frames, 224)
+        # video_feature = torch.tensor(video_feature,dtype=torch.float32).view(3,-1,224,224)
+        # np.save(target_dir,video_feature)
+
+class Conv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, padding, stride=1, bias=True):
+        super(Conv2d, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias)
+        self.bn = nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.1)
+        self.relu = nn.ReLU(inplace=True)
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        return x
+
+
+class Reduction_A(nn.Module):
+    # 35 -> 17
+    def __init__(self, in_channels, k, l, m, n):
+        super(Reduction_A, self).__init__()
+        self.branch_0 = Conv2d(in_channels, n, 3, stride=2, padding=0, bias=False)
+        self.branch_1 = nn.Sequential(
+            Conv2d(in_channels, k, 1, stride=1, padding=0, bias=False),
+            Conv2d(k, l, 3, stride=1, padding=1, bias=False),
+            Conv2d(l, m, 3, stride=2, padding=0, bias=False),
+        )
+        self.branch_2 = nn.MaxPool2d(3, stride=2, padding=0)
+
+    def forward(self, x):
+        x0 = self.branch_0(x)
+        x1 = self.branch_1(x)
+        x2 = self.branch_2(x)
+        return torch.cat((x0, x1, x2), dim=1) # 17 x 17 x 1024

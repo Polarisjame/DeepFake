@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import torch
-from torch.nn import BCELoss,BCEWithLogitsLoss,CrossEntropyLoss
+from torch.nn import BCELoss,BCEWithLogitsLoss,CrossEntropyLoss,Sigmoid
 from torch.optim import AdamW, lr_scheduler, SGD, RMSprop
 from src.utils import Logger, AverageMeter, Drawer, plt
 from data.data_process import DeepFakeSet
@@ -52,42 +52,68 @@ class Trainer():
         else:
             self.logger = logger
         model.cuda()
-        model.apply(weights_init)
         self.model = model
         self.model_save = args.model_save
+        self.proj_to_class = Sigmoid()
         
         # GPU Parallel
         device_ids = list(range(torch.cuda.device_count())) 
         self.model = DataParallel(self.model, device_ids=device_ids).to(device_ids[0]) 
         
         self.log_step = args.log_step
+        self.start_epoch = 0
         logger(getModelSize(model, logger))
         
         # self.optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.l2_decacy, betas=(0.9, 0.999))
         if self.modality == 'video':
             self.optimizer = SGD([
-                {"params":self.model.module.videoSwinT.parameters(),"lr":args.learning_rate},
-                {"params":self.model.module.classsifier.parameters(),"lr":8e-4},], momentum=0.9, weight_decay=args.l2_decacy)
+                {"params":self.model.module.parameters(),
+                 'initial_lr': args.learning_rate}],  lr=args.learning_rate, momentum=0.9, weight_decay=args.l2_decacy)
         else:
-            self.optimizer = SGD(self.model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.l2_decacy)
-        self.scheduler = lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.train_epochs)
-        self.lossF = CrossEntropyLoss()
+            self.optimizer = SGD([{'params': self.model.module.parameters(), 'initial_lr': args.learning_rate}], lr=args.learning_rate, momentum=0.9, weight_decay=args.l2_decacy)
+        self.scheduler = lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.train_epochs, last_epoch=self.start_epoch-1)
+        # self.lossF = CrossEntropyLoss()
+        self.lossF = BCELoss()
     
+    def load_ckpt(self, args):
+        logger = self.logger
+        device = torch.device('cpu')
+        if self.modality == 'audio':
+            if args.audio_ckpt_path is not None:
+                path_checkpoint = args.audio_ckpt_path  
+                logger(f"Load Finetuned Model From:{path_checkpoint}")
+                checkpoint = torch.load(path_checkpoint,map_location=device)  
+                self.model.load_state_dict(checkpoint['checkpoint']) 
+                self.optimizer.load_state_dict(checkpoint['optimizer']) 
+                self.start_epoch = checkpoint['epoch'] + 1  
+        elif self.modality == 'video':
+            if args.vedio_ckpt_path is not None:
+                path_checkpoint = args.vedio_ckpt_path  
+                logger(f"Load Finetuned Model From:{path_checkpoint}")
+                checkpoint = torch.load(path_checkpoint,map_location=device)  
+                self.model.load_state_dict(checkpoint['model']) 
+                self.optimizer.load_state_dict(checkpoint['optimizer']) 
+                self.start_epoch = checkpoint['epoch'] + 1  
+        logger("Load Finetuned Model Succesfully")
+        
     def run_batch(self, video_feat, label, masks):
         if self.modality == 'paudio':
             model_out = self.model(video_feat,masks)
         else:
-            model_out = self.model(video_feat)
+            model_out, _ = self.model(video_feat)
         loss = self.lossF(model_out, label)
         with torch.no_grad():
-            _, indices = torch.max(model_out.to('cpu'), dim=1)
+            # self.logger(f"{model_out}, {label}, {loss}")
+            # _, indices = torch.max(model_out.to('cpu'), dim=1)
             # print(indices)
-            correct = torch.sum(indices == label.to('cpu'))
-            acc = correct.item() * 1.0 / len(label)
+            correct = torch.sum((model_out>=0.5)==label.to(int)).to('cpu')
+            # correct = torch.sum(indices == label.to('cpu'))
+            acc = correct.numpy() * 1.0 / len(label)
         return {
             'loss':loss,
             'acc':acc
         }
+        
     
     def submit(self,dataset):
         result_dict = {}
@@ -107,14 +133,18 @@ class Trainer():
                 if self.modality == 'paudio':
                     model_out = self.model(video_feat,mask)
                 else:
-                    model_out = self.model(video_feat)
-                values, indices = torch.max(model_out.to('cpu'), dim=1)
-                for ind,value in np.ndarray(values.numpy()):
+                    model_out,_ = self.model(video_feat)
+                values = model_out.cpu()
+                for ind,value in enumerate(values.numpy()):
                     filename = filenames[ind]
                     result_dict[filename] = value
+                if iter_id % self.log_step == 0:
+                    logger('|step {:4d} |'.format(iter_id))
+        logger("Predict Done")
+        print(result_dict)
         return result_dict
                 
-    def eval(self, dataloader, epoch, t, lr,val_loss_draw):
+    def eval(self, dataloader, epoch, t, lr,val_loss_draw: Drawer):
         logger = self.logger
         loss_stat = AverageMeter()
         with torch.no_grad():
@@ -145,11 +175,11 @@ class Trainer():
         logger = self.logger
         
         loss_stat = AverageMeter()
-        train_loss_draw = Drawer()
-        val_loss_draw = Drawer()
+        train_loss_draw = Drawer(self.modality, 'train')
+        val_loss_draw = Drawer(self.modality, 'val')
         logger('[INFO] Start training, lr = {:.4f}'.format(self.optimizer.param_groups[0]['lr']))
         t=0
-        for epoch in range(1, self.train_epochs):
+        for epoch in range(self.start_epoch+1, self.train_epochs+1):
             lr = self.optimizer.param_groups[0]['lr']
             for phase in ['train', 'val']:
                 if phase == 'train':
@@ -182,15 +212,19 @@ class Trainer():
                     if t % self.log_step == 0:
                         logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Train Loss {:3.5f} | Train Acc {:1.5f} '.format(epoch, t, lr,
                                                                                                     loss, run_stats['acc']))
+                    train_loss_draw.update(loss)
                     t+=1
                     loss_stat.update(loss)
                 logger(f'Phase:{phase}, Avg Loss:{loss_stat.avg}')
-                train_loss_draw.update(loss_stat.avg)
                 loss_stat.reset()
             self.scheduler.step()
             if epoch % self.model_save == 0:
-                torch.save(self.model.state_dict(), f"./checkpoints/VST_deepfake_modality{self.modality}_batch{self.batch_size}_epoch{epoch}.pth")
-                train_loss_draw.draw()
-                val_loss_draw.draw()
-                plt.show()
+                path = f"./checkpoints/VST_deepfake_modality{self.modality}_batch{self.batch_size}_epoch{epoch}.pth"
+                torch.save({
+                    'epoch': epoch,
+                    'checkpoint': self.model.state_dict(),
+                    'optimizer': self.optimizer.state_dict(),
+                }, path)
+                train_loss_draw.draw(epoch)
+                val_loss_draw.draw(epoch)
                     
