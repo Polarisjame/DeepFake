@@ -10,11 +10,12 @@ import sys
 sys.path.append('../')
 from src.utils import *
 import threading
+import soundfile as sf
 
 
 class DeepFake(data.Dataset):
 
-    def __init__(self, root, args, event: threading.Event, transforms=None, train=True, logger=None):
+    def __init__(self, root, args, event: threading.Event, transforms=None, train=True, logger=None, test=False):
         """
         主要目标： 获取所有图片的地址，并根据训练，验证，测试划分数据
         """
@@ -24,7 +25,8 @@ class DeepFake(data.Dataset):
         else:
             self.dataset_path = os.path.join(root , 'valset')
             label_path = os.path.join(root, 'val_label.txt')
-
+        
+        self.train = train
         self.filepaths = [os.path.join(self.dataset_path, video) for video in os.listdir(self.dataset_path)]
         label_raw = pd.read_csv(label_path)
         raw_dict = {}
@@ -35,14 +37,23 @@ class DeepFake(data.Dataset):
         self.num_frames = args.num_frames
         self.modality = args.modality
         self.target_size = 224
-        self.transform = T.Compose([
-                        T.Resize((self.target_size, self.target_size)),
-                        T.RandomHorizontalFlip(),
-                        T.RandomVerticalFlip(),
-                        T.ToTensor(),
-                        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
-                        ])
-        if self.modality == 'audio':
+        if test or not train:
+            self.transforms = T.Compose([
+                T.Resize(self.target_size),
+                T.CenterCrop(self.target_size),
+                T.ToTensor(),
+                T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
+            ])
+        else:
+            self.transform = T.Compose([
+                            T.Resize((self.target_size, self.target_size)),
+                            T.RandomHorizontalFlip(),
+                            T.RandomVerticalFlip(),
+                            T.RandomRotation(90),
+                            T.ToTensor(),
+                            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
+                            ])
+        if self.modality == 'audio' or self.modality == 'fused':
             if train:
                 extract_audio_img_path = os.path.join(root, 'trainAudioImgs')
             else:
@@ -51,23 +62,6 @@ class DeepFake(data.Dataset):
                 if not os.path.exists(extract_audio_img_path):
                     os.mkdir(extract_audio_img_path)
                 logger("Processing Audio File!")
-                # thread_num = 2
-                # split_size = len(self.filepaths) // thread_num
-                # sub_lists = [self.filepaths[i:i+split_size] for i in range(0, len(self.filepaths), split_size)]
-                # remain_size = len(self.filepaths) - len(sub_lists)*split_size
-                # if remain_size > 0:
-                #     sub_lists.append(self.filepaths[len(self.filepaths)-remain_size:])
-                #     thread_num+=1
-                # threads = []
-                
-                # for thread_index,sub_list in enumerate(sub_lists):
-                #     t = threading.Thread(target=process_list, args=(sub_list,extract_audio_img_path,logger))
-                #     threads.append(t)
-                #     t.start()
-                #     logger(f"Thread{thread_index} Start!")
-                # for t in threads:
-                #     t.join()
-                #     logger(f"Thread{thread_index} Finished!")
 
                 for index, video_path in enumerate(self.filepaths):
                     target_dir = os.path.join(extract_audio_img_path,video_path.split('/')[-1][:-4] + '.jpg')
@@ -85,38 +79,42 @@ class DeepFake(data.Dataset):
             else:
                 logger("Audio File Has Previously Been Processed")
             self.audio_path = extract_audio_img_path
-            self.transform = T.Compose([
-                        T.Resize((self.target_size, self.target_size)),
-                        T.RandomHorizontalFlip(),
-                        T.RandomVerticalFlip(),
-                        T.ToTensor(),
-                        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
-                        ])
-        elif self.modality == 'paudio':
-            if train:
-                extract_audio_tensor_path = os.path.join(root, 'trainAudioTensors')
-            else:
-                extract_audio_tensor_path = os.path.join(root, 'ValAudioTensors')
-            if not os.path.exists(extract_audio_tensor_path) or args.force_generate:
-                if not os.path.exists(extract_audio_tensor_path):
-                    os.mkdir(extract_audio_tensor_path)
-                logger("Processing Pure Audio File!")
-                for index, video_path in enumerate(self.filepaths):
-                    target_dir = os.path.join(extract_audio_tensor_path,video_path.split('/')[-1][:-4] + '.pt')
-                    if os.path.exists(target_dir):
-                        continue
-                    if index % 100 == 0:
-                        rate = int(index/len(self.filepaths)*100)
-                        if train:
-                            logger("Train:["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(self.filepaths)})")
-                        else:
-                            logger("Val: ["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(self.filepaths)})")
-                    mel_spectrogram_tensor, mask = generate_sample_wave(video_path)
-                    comb = torch.concat((mel_spectrogram_tensor,mask.unsqueeze(1)),dim=1)
-                    torch.save(comb, target_dir)
-            else:
-                logger("Audio File Has Previously Been Processed")
-            self.paudio_path = extract_audio_tensor_path
+        # elif self.modality == 'paudio':
+        #     if train:
+        #         extract_audio_wav_path = os.path.join(root, 'trainAudioWav')
+        #     else:
+        #         extract_audio_wav_path = os.path.join(root, 'ValAudioWav')
+                
+        #     if not os.path.exists(extract_audio_wav_path) or args.force_generate:
+        #         if not os.path.exists(extract_audio_wav_path):
+        #             os.mkdir(extract_audio_wav_path)
+        #     logger("Processing Pure Audio File!")
+            
+        #     thread_num = 8
+        #     split_size = len(self.filepaths) // thread_num
+        #     sub_lists = [self.filepaths[i:i+split_size] for i in range(0, len(self.filepaths), split_size)]
+        #     remain_size = len(self.filepaths) - len(sub_lists)*split_size
+        #     if remain_size > 0:
+        #         sub_lists.append(self.filepaths[len(self.filepaths)-remain_size:])
+        #         thread_num+=1
+        #     threads = []
+            
+        #     for thread_index,sub_list in enumerate(sub_lists):
+        #         t = threading.Thread(target=split_audio_wav_thread, args=(sub_list,extract_audio_wav_path,logger))
+        #         threads.append(t)
+        #         t.start()
+        #         logger(f"Thread{thread_index} Start!")
+        #     for thread_index,t in enumerate(threads):
+        #         t.join()
+        #         logger(f"Thread{thread_index} Finished!")
+        #     for index, video_path in enumerate(self.filepaths):
+        #         if index % 100 == 0:
+        #             rate = int(index/len(self.filepaths)*100)
+        #             if train:
+        #                 logger("Train:["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(self.filepaths)})")
+        #             else:
+        #                 logger("Val: ["+"*"*rate+"-"*(100-rate)+"]"+f" ({index}/{len(self.filepaths)})")
+        #     self.paudio_path = extract_audio_wav_path
 
     def __getitem__(self, index):
         """
@@ -134,14 +132,20 @@ class DeepFake(data.Dataset):
             img = self.transform(img)
             feature = img
         elif self.modality== 'paudio':
-            tensor_path = os.path.join(self.paudio_path , file_root.split('/')[-1][:-4] + '.pt')
-            feature = torch.load(tensor_path)
-            # feature = comb[:,:-1]
-            # mask = comb[:,-1]
-        # label_tensor = torch.zeros(2)
-        # label_tensor[label] = 1
-        label = torch.tensor(label,dtype=torch.float32)
-        return feature, label, file_root.split('/')[-1]
+                feature = extract_wav(file_root)
+            # wav_path = os.path.join(self.paudio_path , file_root.split('/')[-1][:-4] + '.wav')
+            #  y, sr = librosa.load(audio_path, sr=16000)
+            # feature = y
+            # feature = torch.tensor(y, dtype=torch.float32)
+        elif self.modality=='fused':
+            video_feat = extract_frames(file_root, self.num_frames, self.target_size, self.transform)
+            audio_feat = self.transform(Image.open(os.path.join(self.audio_path , file_root.split('/')[-1][:-4] + '.jpg')).convert('RGB'))
+            paudio_feat = extract_wav(file_root)
+            feature = {"Video":video_feat, "Audio":audio_feat, "PAudio":paudio_feat}
+        label_tensor = torch.zeros(2)
+        label_tensor[label] = 1
+        # label = torch.tensor(label,dtype=torch.float32)
+        return feature, label_tensor, file_root.split('/')[-1]
 
     def __len__(self):
         return len(self.filepaths)
@@ -159,6 +163,7 @@ class DeepFakeSet():
         self.world_size = world_size
         self.rank = rank
         self.logger = logger
+        self.modality = args.modality
 
     def setup(self, event:threading.Event, stage=None):
         if stage == 'fit' or stage is None:
@@ -170,26 +175,24 @@ class DeepFakeSet():
             raise NotImplementedError
 
     def train_dataloader(self):
-        if self.world_size is None:
-            dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
+        if self.modality == 'paudio':
+            dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=collate_opt)
+        elif self.modality == 'fused':
+            dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=fusion_collate)
         else:
-            sampler = DistributedSampler(self.trainset,
-                                        num_replicas=self.world_size,
-                                        rank=self.rank) 
-            dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=False, sampler=sampler)
+            dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
         # for data in dataloader:
         #     input, label = data
         #     print(label.data)
         return dataloader
 
     def val_dataloader(self):
-        if self.world_size is None:
-            dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
+        if self.modality == 'paudio':
+            dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, collate_fn=collate_opt)
+        elif self.modality == 'fused':
+            dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, collate_fn=fusion_collate)
         else:
-            sampler = DistributedSampler(self.valset,
-                                        num_replicas=self.world_size,
-                                        rank=self.rank) 
-            dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, sampler=sampler)
+            dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
         return dataloader
 
     def test_dataloader(self):

@@ -329,15 +329,16 @@ class NeXtVLAD(nn.Module):
     
 class InceptionVideoClassifier(nn.Module):
     def __init__(self, args, num_classes, in_channels=3, num_clusters=64, lamb=2, hidden_size=1024,
-                groups=8, max_frames=300, drop_rate=0.5, gating_reduction=8, pretrained_resnet=None):
+                groups=8, max_frames=300, drop_rate=0.5, gating_reduction=8, pretrained_resnet=None, use_feat=False):
         super(InceptionVideoClassifier, self).__init__()
         
-        self.inceptionRes = Inception_ResNetv2(in_channels=3) # dim=1536
+        self.inceptionRes = Inception_ResNetv2(in_channels=3, dropout_rate=drop_rate) # dim=1536
         # self.inceptionRes = iResNet(Bottleneck, [2, 2, 2, 2], dropout_prob0=drop_rate) # dim=2048
         # if pretrained_resnet is not None:
         #     self.inceptionRes.load_state_dict(torch.load(pretrained_resnet))
         # self.inceptionRes = Res34(args, 3, 1024)
         dim = 1536
+        self.use_feat = use_feat
         self.drop_rate = drop_rate
         self.group_size = int((lamb * dim) // groups)
         self.fc0 = nn.Linear(num_clusters * self.group_size, hidden_size)
@@ -345,7 +346,9 @@ class InceptionVideoClassifier(nn.Module):
         self.fc1 = nn.Linear(hidden_size, hidden_size // gating_reduction)
         self.bn1 = nn.BatchNorm1d(1)
         self.fc2 = nn.Linear(hidden_size // gating_reduction, hidden_size)
-        self.logistic = nn.Linear(hidden_size, num_classes)
+        if not use_feat:
+            self.logistic = nn.Linear(hidden_size, num_classes)
+            self.classify_drop = nn.Dropout(args.classify_drop)
 
         self.video_nextvlad = NeXtVLAD(dim, max_frames=args.num_frames, lamb=lamb,
                                         num_clusters=num_clusters, groups=groups)
@@ -377,9 +380,11 @@ class InceptionVideoClassifier(nn.Module):
         gates = self.fc2(gates)
         gates = torch.sigmoid(gates)
         # B x H0 -> B x H0
-        activation = torch.mul(activation, gates)
+        feat = torch.mul(activation, gates)
         # B x H0 -> B x k
-        out = self.logistic(activation).squeeze()
-        out = torch.sigmoid(out)
-
-        return out, x
+        if not self.use_feat:
+            out = self.logistic(feat).squeeze()
+            out = self.classify_drop(out)
+            out = torch.sigmoid(out)
+            return out
+        return feat

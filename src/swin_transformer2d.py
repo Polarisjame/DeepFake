@@ -531,7 +531,7 @@ class SwinTransformerV2(nn.Module):
                  window_size=7, mlp_ratio=4., qkv_bias=True,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, pretrained_window_sizes=[0, 0, 0, 0], **kwargs):
+                 use_checkpoint=False, pretrained_window_sizes=[0, 0, 0, 0], use_feat=False, **kwargs):
         super().__init__()
 
         self.num_classes = num_classes
@@ -541,6 +541,7 @@ class SwinTransformerV2(nn.Module):
         self.patch_norm = patch_norm
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         self.mlp_ratio = mlp_ratio
+        self.use_feat = use_feat
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
@@ -581,8 +582,9 @@ class SwinTransformerV2(nn.Module):
 
         self.norm = norm_layer(self.num_features)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
-        self.head = Mlp(self.num_features, 256, self.num_classes)
-        self.active = nn.Sigmoid()
+        if not use_feat:
+            self.head = Mlp(self.num_features, 256, self.num_classes)
+            self.active = nn.Sigmoid()
         # self.active = nn.Softmax(dim=-1)
 
         self.apply(self._init_weights)
@@ -622,8 +624,10 @@ class SwinTransformerV2(nn.Module):
 
     def forward(self, x):
         x = self.forward_features(x)
-        x_class = self.active(self.head(x))
-        return torch.squeeze(x_class), x
+        if not self.use_feat:
+            x_class = self.active(self.head(x))
+            return torch.squeeze(x_class)
+        return x
     
     def commonspace_proj(self, x:torch.Tensor):
         # x:[B, L, C] -> [B, C]

@@ -9,7 +9,7 @@ def get_opt():
     parser.add_argument('--modality', type=str, default='audio')
     parser.add_argument('--num_frames', type=int, default=32, help='extract fixed number of frames')
     parser.add_argument('--force_generate', action='store_true', help='force process audio file')
-    parser.add_argument('-nu', '--num_workers', type=int, default=3, help='thread number')
+    parser.add_argument('-nu', '--num_workers', type=int, default=1, help='thread number')
     
     # Model
     parser.add_argument('--video_pretrained_dir', type=str, default='checkpoints/swin_small_patch244_window877_kinetics400_1k.pth')
@@ -19,7 +19,8 @@ def get_opt():
     parser.add_argument('--num_hiddens', type=int, default=128, help='Hidden Num of Classifier')
     parser.add_argument('--video_pool', type=str, help='VST Pool Method')
     parser.add_argument('--audio_ckpt_path',type=str,default=None)
-    parser.add_argument('--vedio_ckpt_path',type=str,default=None)
+    parser.add_argument('--video_ckpt_path',type=str,default=None)
+    parser.add_argument('--paudio_ckpt_path',type=str,default=None)
     parser.add_argument('--Resume', action='store_true', help='resume model from ckpt')
 
     # Learning

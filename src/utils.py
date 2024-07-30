@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import os
 import random
 import threading
@@ -9,21 +10,19 @@ import tensorflow as tf
 import moviepy.editor as mp
 import torch
 import librosa
+import soundfile as sf
 import matplotlib.pyplot as plt
 from torch import nn
 
 REF_SEC=5
 
 def extract_frames(video_path, num_frames, target_size, trans):
-    # 打开视频文件
     frames = torch.zeros(0,3,target_size,target_size, dtype=torch.float32)
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # 确定提取帧的间隔
     frame_interval = total_frames // num_frames
     for i in range(num_frames):
-        # 设置视频帧位置
         cap.set(cv2.CAP_PROP_POS_FRAMES, i * frame_interval)
         ret, frame = cap.read()
         if ret:
@@ -74,6 +73,48 @@ def generate_mel_spectrogram(video_path, thread_id=0, n_mels=128, fmax=8000, tar
 
     return img_resized
 
+def split_audio_wav(video_path, extract_audio_wav_path):
+    video = mp.VideoFileClip(video_path)
+    target_dir = os.path.join(extract_audio_wav_path,video_path.split('/')[-1][:-4] + '.wav')
+    video.audio.write_audiofile(target_dir, verbose=False, logger=None)
+    
+def split_audio_wav_thread(sub_lists, extract_audio_wav_path, logger):
+    thread_id = threading.current_thread().ident + random.randint(1, 1000)
+    for index,video_path in enumerate(sub_lists):
+        target_dir = os.path.join(extract_audio_wav_path,video_path.split('/')[-1][:-4] + '.wav')
+        if os.path.exists(target_dir):
+            continue
+        if index % 100 == 0:
+            logger(f"Thread:{thread_id} Processed {index} Files")
+        video = mp.VideoFileClip(video_path)
+        video.audio.write_audiofile(target_dir, verbose=False, logger=None)
+
+def extract_wav(video_path):
+    path_id = random.randint(0,10000)
+    audio_path = f'./extract_wav/extracted_audio_{path_id}.wav'
+    
+    video = mp.VideoFileClip(video_path)
+    video.audio.write_audiofile(audio_path, verbose=False, logger=None, fps=16000)
+    y, sr = librosa.load(audio_path, sr=16000)
+    feature = y
+    return feature
+
+def process_list(items, event: threading.Event, extract_video_tensor_path, logger, num_frames):
+    # 创建5个线程，每个线程处理一个列表项
+    thread_id = threading.current_thread().ident + random.randint(1, 1000)
+    for index,video_path in enumerate(items):
+        if event.is_set():
+            print(f"Tread{thread_id} Stoped Unexpected")
+            break
+        target_dir = os.path.join(extract_video_tensor_path,video_path.split('/')[-1][:-4] + '.pt')
+        if os.path.exists(target_dir):
+            continue
+        if index % 100 == 0:
+            logger(f"Thread:{thread_id} Processed {index} Files")
+        video_feature_row = extract_frames(video_path, extract_video_tensor_path,num_frames, 224)
+        # video_feature = torch.tensor(video_feature,dtype=torch.float32).view(3,-1,224,224)
+        # np.save(target_dir,video_feature)
+
 def generate_sample_wave(video_path, 
                          sample_rate=22050,
                          stft_length=0.032,
@@ -122,6 +163,34 @@ def generate_sample_wave(video_path,
     return spectrogram,mask_pad
     # mask = torch.tensor(mask).unsqueeze(0)
     
+def collate_opt(batch):
+    features, labels, filenames = zip(*batch)
+    pre_list = []
+    label = torch.stack(labels)
+    for feature in features:
+        pre_list.append(feature)
+    return pre_list, label, filenames
+        
+def fusion_collate(batch):
+    features, labels, filenames = zip(*batch)
+    feat_res_dict = {}
+    labels = torch.stack(labels)
+    # labels = torch.as_tensor(labels, dtype=torch.int)
+    for feat_dict in features:
+        for k,v in feat_dict.items():
+            if k != 'PAudio':
+                v = v.unsqueeze(0)
+                if k in feat_res_dict.keys():
+                    feat_res_dict[k] = torch.cat((feat_res_dict[k],v),dim=0)
+                else:
+                    feat_res_dict[k] = v
+            else:
+                if k in feat_res_dict.keys():
+                    feat_res_dict[k].append(v)
+                else:
+                    feat_res_dict[k] = [v]
+    return feat_res_dict, labels, filenames
+
 class Drawer(object):
     def __init__(self, modality, phase):
         self.reset()
@@ -169,6 +238,38 @@ class Logger():
         
     def __delete__(self):
         self.f.close()
+        
+def load_pre_fused(args, VE, AE, PAE, logger=None):
+    device = torch.device('cpu')
+    if args.audio_ckpt_path is not None:
+        logger(f"==============> Loading weight {args.audio_ckpt_path} for Audio fine-tuning......")
+        checkpoint = torch.load(args.audio_ckpt_path, map_location=torch.device('cpu'))['checkpoint']
+        new_state_dict = OrderedDict()
+        for k, v in checkpoint.items():
+            if "head" in k:
+                continue
+            name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+        AE.load_state_dict(new_state_dict,strict=False) 
+        logger(f"=> loaded successfully '{args.audio_ckpt_path}'")
+    if args.video_ckpt_path is not None:
+        logger(f"==============> Loading weight {args.video_ckpt_path} for Audio fine-tuning......")
+        checkpoint = torch.load(args.video_ckpt_path, map_location=torch.device('cpu'))['checkpoint']
+        new_state_dict = OrderedDict()
+        for k, v in checkpoint.items():
+            name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+        VE.load_state_dict(new_state_dict) 
+        logger(f"=> loaded successfully '{args.video_ckpt_path}'")
+    if args.paudio_ckpt_path is not None:
+        logger(f"==============> Loading weight {args.paudio_ckpt_path} for Audio fine-tuning......")
+        checkpoint = torch.load(args.paudio_ckpt_path, map_location=torch.device('cpu'))['checkpoint']
+        new_state_dict = OrderedDict()
+        for k, v in checkpoint.items():
+            name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+        PAE.load_state_dict(new_state_dict) 
+        logger(f"=> loaded successfully '{args.paudio_ckpt_path}'")
         
 def load_pretrained(config, model, logger):
     logger(f"==============> Loading weight {config.audio_pretrained_dir} for fine-tuning......")
@@ -257,22 +358,6 @@ def load_pretrained(config, model, logger):
 
     del checkpoint
     torch.cuda.empty_cache()
-
-def process_list(items, event: threading.Event, extract_video_tensor_path, logger, num_frames):
-    # 创建5个线程，每个线程处理一个列表项
-    thread_id = threading.current_thread().ident + random.randint(1, 1000)
-    for index,video_path in enumerate(items):
-        if event.is_set():
-            print(f"Tread{thread_id} Stoped Unexpected")
-            break
-        target_dir = os.path.join(extract_video_tensor_path,video_path.split('/')[-1][:-4] + '.pt')
-        if os.path.exists(target_dir):
-            continue
-        if index % 100 == 0:
-            logger(f"Thread:{thread_id} Processed {index} Files")
-        video_feature_row = extract_frames(video_path, extract_video_tensor_path,num_frames, 224)
-        # video_feature = torch.tensor(video_feature,dtype=torch.float32).view(3,-1,224,224)
-        # np.save(target_dir,video_feature)
 
 class Conv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, padding, stride=1, bias=True):
