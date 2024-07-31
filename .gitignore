@@ -4,3 +4,5 @@ __pycache__
 *.wav
 *.png
 *.csv
+checkpoints/*
+gpu_track/*

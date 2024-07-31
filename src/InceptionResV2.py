@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from src.utils import Conv2d, Reduction_A
-
+import torch.nn.functional as F
 
 class Stem(nn.Module):
     def __init__(self, in_channels):
@@ -133,7 +133,7 @@ class Inception_ResNet_C(nn.Module):
 
 
 class Inception_ResNetv2(nn.Module):
-    def __init__(self, in_channels=3, k=256, l=256, m=384, n=384):
+    def __init__(self, in_channels=3, k=256, l=256, m=384, n=384, dropout_rate=0.0):
         super(Inception_ResNetv2, self).__init__()
         blocks = []
         blocks.append(Stem(in_channels))
@@ -149,10 +149,12 @@ class Inception_ResNetv2(nn.Module):
         self.features = nn.Sequential(*blocks)
         self.conv = Conv2d(2080, 1536, 1, stride=1, padding=0, bias=False)
         self.global_average_pooling = nn.AdaptiveAvgPool2d((1, 1))
+        self.drop = dropout_rate
 
     def forward(self, x):
         x = self.features(x)
         x = self.conv(x)
         x = self.global_average_pooling(x)
+        x = F.dropout(x,self.drop)
         x = x.view(x.size(0), -1)
         return x
