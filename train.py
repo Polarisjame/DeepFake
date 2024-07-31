@@ -57,6 +57,8 @@ def train(args, logger):
     trainer = Trainer(model, args, device, logger, processor)
     if args.Resume:
         if args.modality == 'fused':
+            del model,trainer
+            torch.cuda.empty_cache()
             load_pre_fused(args, VideoE, AudioE, PAudioE, logger)
             model = FusionModel(args, VideoE, AudioE, PAudioE)
             trainer = Trainer(model, args, device, logger, processor)

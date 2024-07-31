@@ -7,6 +7,8 @@ from src.utils import Logger, AverageMeter, Drawer, plt
 from data.data_process import DeepFakeSet
 from torch.nn.parallel import DataParallel 
 import torch.nn as nn
+# from modelsize_estimate import modelsize
+from gpu_mem_track import MemTracker
 
 def getModelSize(model,logger):
     param_size = 0
@@ -55,8 +57,10 @@ class Trainer():
             self.processor = processor
         model.cuda()
         self.model = model
+        
+        logger(getModelSize(self.model,logger))
+        
         self.model_save = args.model_save
-        self.proj_to_class = Sigmoid()
         
         # GPU Parallel
         device_ids = list(range(torch.cuda.device_count())) 
@@ -64,9 +68,8 @@ class Trainer():
         
         self.log_step = args.log_step
         self.start_epoch = 0
-        logger(getModelSize(model, logger))
         
-        # self.optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.l2_decacy, betas=(0.9, 0.999))
+        # self.optimizer = AdamW([{'params': self.model.module.parameters(), 'initial_lr': args.learning_rate}], lr=args.learning_rate, weight_decay=args.l2_decacy, betas=(0.9, 0.999))
         if self.modality == 'video':
             self.optimizer = SGD([
                 {"params":self.model.module.parameters(),
@@ -99,12 +102,7 @@ class Trainer():
         logger("Load Finetuned Model Succesfully")
         
     def run_batch(self, feature, label):
-        if self.modality == 'fused':
-            video_feat,audio_feat,paudio_feat = feature
-            model_out = self.model(video_feat,audio_feat,paudio_feat)
-            print(model_out)
-        else:
-            model_out = self.model(feature)
+        model_out = self.model(feature)
         loss = self.lossF(model_out, label)
         with torch.no_grad():
             # self.logger(f"{model_out}, {label}, {loss}")
@@ -131,19 +129,19 @@ class Trainer():
                     feature = self.processor(audio_wav, sampling_rate=16000, return_tensors="pt", padding='longest').input_values  # torch.Size([B, T])
                     feature = feature.to(self.device)
                     label = label.to(self.device)
-                    model_out = self.model(feature)
                 elif self.modality == 'fused':
                     feat_dict,label,filenames = batch
+                    label = label.to(self.device)
                     video_feat = feat_dict['Video'].to(self.device)
                     audio_feat = feat_dict['Audio'].to(self.device)
                     paudio_wav = feat_dict['PAudio']
                     paudio_feat = self.processor(paudio_wav, sampling_rate=16000, return_tensors="pt", padding='longest').input_values.to(self.device)
-                    model_out = self.model(video_feat,audio_feat,paudio_feat)
+                    feature = (video_feat, audio_feat, paudio_feat)
                 else:
                     feature,label,filenames = batch
                     feature = feature.to(self.device)
                     label = label.to(self.device)
-                    model_out = self.model(feature)
+                model_out = self.model(feature)
                 values = model_out.cpu()
                 for ind,value in enumerate(values.numpy()):
                     filename = filenames[ind]
@@ -164,7 +162,6 @@ class Trainer():
                     feature = self.processor(audio_wav, sampling_rate=16000, return_tensors="pt", padding='longest').input_values  # torch.Size([B, T])
                     feature = feature.to(self.device)
                     label = label.to(self.device)
-                    run_stats = self.run_batch(feature, label)
                 elif self.modality == 'fused':
                     feat_dict,label,_ = batch
                     label = label.to(self.device)
@@ -172,12 +169,12 @@ class Trainer():
                     audio_feat = feat_dict['Audio'].to(self.device)
                     paudio_wav = feat_dict['PAudio']
                     paudio_feat = self.processor(paudio_wav, sampling_rate=16000, return_tensors="pt", padding='longest').input_values.to(self.device)
-                    run_stats = self.run_batch((video_feat,audio_feat,paudio_feat), label)
+                    feature = (video_feat, audio_feat, paudio_feat)
                 else:
                     feature,label,_ = batch
                     feature = feature.to(self.device)
                     label = label.to(self.device)
-                    run_stats = self.run_batch(feature, label)
+                run_stats = self.run_batch(feature, label)
                 loss = run_stats['loss']                    
                 if t % self.log_step == 0:
                     logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Val Loss {:3.5f} | Val Acc {:1.5f} '.format(epoch, t, lr,
@@ -192,6 +189,7 @@ class Trainer():
         trainloader = dataset.train_dataloader()
         valloader = dataset.val_dataloader()
         logger = self.logger
+        gpu_tracker = MemTracker(path='./gpu_track/')
         
         loss_stat = AverageMeter()
         train_loss_draw = Drawer(self.modality, 'train')
@@ -218,7 +216,6 @@ class Trainer():
                         feature = self.processor(audio_wav, sampling_rate=16000, return_tensors="pt", padding='longest').input_values  # torch.Size([B, T])
                         feature = feature.to(self.device)
                         label = label.to(self.device)
-                        run_stats = self.run_batch(feature, label)
                     elif self.modality == 'fused':
                         feat_dict,label,_ = batch
                         label = label.to(self.device)
@@ -226,21 +223,25 @@ class Trainer():
                         audio_feat = feat_dict['Audio'].to(self.device)
                         paudio_wav = feat_dict['PAudio']
                         paudio_feat = self.processor(paudio_wav, sampling_rate=16000, return_tensors="pt", padding='longest').input_values.to(self.device)
-                        run_stats = self.run_batch((video_feat,audio_feat,paudio_feat), label)
+                        feature = (video_feat, audio_feat, paudio_feat)
                     else:
                         feature,label,_ = batch
                         feature = feature.to(self.device)
                         label = label.to(self.device)
-                        run_stats = self.run_batch(feature, label)
+                    gpu_tracker.track()
+                    run_stats = self.run_batch(feature, label)
+                    gpu_tracker.track()
                     stage1 = torch.cuda.memory_allocated(0)/8/1024/1024
                     # logger('| epoch {:2d} | step {:4d} | Stage0 Mem Usage {} | Stage1 Mem Usage {}'.format(epoch, t, stage0, stage1))
                     loss = run_stats['loss']
                     self.optimizer.zero_grad()
                     loss.backward()
-                    self.optimizer.step()                    
+                    self.optimizer.step()
+                    gpu_tracker.track()                    
                     if t % self.log_step == 0:
+                        # modelsize(self.model,feature, 4, logger)
                         torch.cuda.empty_cache()
-                        logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Train Loss {:3.5f} | Train Acc {:1.5f} | Mem Usage {:.4f}'.format(epoch, t, lr,
+                        logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Train Loss {:3.5f} | Train Acc {:1.5f} | MemUsage {:.4f}'.format(epoch, t, lr,
                                                                                                     loss, run_stats['acc'], stage1))
                     train_loss_draw.update(loss)
                     t+=1

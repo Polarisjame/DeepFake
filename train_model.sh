@@ -1,5 +1,5 @@
 #! /bin/bash
-export CUDA_VISIBLE_DEVICES=4,5
+export CUDA_VISIBLE_DEVICES=3,4,5
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # -------------------DeepFake Training Shell Script--------------------
@@ -26,7 +26,7 @@ if true; then
   num_hiddens=256
   l2_decacy=1e-3
   epochs=4
-  learning_rate=3e-3
+  learning_rate=7e-4
   model_save=1
   log_step=5
   audio_ckpt_path='checkpoints/VST_deepfake_modalityaudio_batch48_epoch12.pth'

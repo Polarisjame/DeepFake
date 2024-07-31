@@ -13,13 +13,14 @@ class FusionModel(nn.Module):
         self.audio_projection = nn.Linear(audio_dim, common_dim)
         self.paudio_projection = nn.Linear(paudio_dim, common_dim)
         self.attn_proj = nn.Linear(common_dim*3, 768, bias=False)
-        self.norm = nn.LayerNorm(768)
+        self.norm = nn.BatchNorm1d(768)
         self.classify = Mlp(768, 256, 2)
         self.drop = nn.Dropout(args.classify_drop)
         self.out_act = nn.Softmax(-1)
         # self.out_act = nn.Sigmoid()
         
-    def forward(self, video_feat, audio_feat, paudio_feat):
+    def forward(self, feature: tuple):
+        video_feat, audio_feat, paudio_feat = feature
         v_x = self.vExtract(video_feat)
         a_x = self.aExtract(audio_feat)
         pa_x = self.paExtract(paudio_feat)
@@ -31,6 +32,8 @@ class FusionModel(nn.Module):
         comb_x = self.norm(self.attn_proj(comb_x))
         comb_x = self.drop(comb_x)
         out = self.drop(self.classify(comb_x))
+        
+        del v_x,a_x,pa_x,comb_x
         
         return self.out_act(out.squeeze())
         

@@ -387,4 +387,5 @@ class InceptionVideoClassifier(nn.Module):
             out = self.classify_drop(out)
             out = torch.sigmoid(out)
             return out
+        del activation,gates,vlad,x
         return feat
