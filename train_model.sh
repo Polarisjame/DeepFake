@@ -27,7 +27,7 @@ if true; then
   l2_decacy=1e-3
   epochs=4
   learning_rate=7e-4
-  model_save=1
+  model_save=2000
   log_step=5
   audio_ckpt_path='checkpoints/VST_deepfake_modalityaudio_batch48_epoch12.pth'
 

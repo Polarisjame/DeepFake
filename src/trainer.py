@@ -230,32 +230,37 @@ class Trainer():
                         label = label.to(self.device)
                     gpu_tracker.track()
                     run_stats = self.run_batch(feature, label)
+
+                    del feature,label
+                    
                     gpu_tracker.track()
                     stage1 = torch.cuda.memory_allocated(0)/8/1024/1024
                     # logger('| epoch {:2d} | step {:4d} | Stage0 Mem Usage {} | Stage1 Mem Usage {}'.format(epoch, t, stage0, stage1))
                     loss = run_stats['loss']
                     self.optimizer.zero_grad()
                     loss.backward()
-                    self.optimizer.step()
-                    gpu_tracker.track()                    
+                    self.optimizer.step()                 
                     if t % self.log_step == 0:
                         # modelsize(self.model,feature, 4, logger)
                         torch.cuda.empty_cache()
                         logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Train Loss {:3.5f} | Train Acc {:1.5f} | MemUsage {:.4f}'.format(epoch, t, lr,
                                                                                                     loss, run_stats['acc'], stage1))
-                    train_loss_draw.update(loss)
+                    
                     t+=1
-                    loss_stat.update(loss)
+                    if t % self.model_save == 0:
+                        path = f"./checkpoints/VST_deepfake_modality{self.modality}_batch{self.batch_size}_epoch{epoch}_step{t}.pth"
+                        torch.save({
+                            'epoch': epoch,
+                            'checkpoint': self.model.state_dict(),
+                            'optimizer': self.optimizer.state_dict(),
+                        }, path)
+                    train_loss_draw.draw(epoch)
+                    val_loss_draw.draw(epoch)
+                    gpu_tracker.track()   
+                    train_loss_draw.update(loss.item())
+                    loss_stat.update(loss.item())
+                    gpu_tracker.step()
                 logger(f'Phase:{phase}, Avg Loss:{loss_stat.avg}')
                 loss_stat.reset()
             self.scheduler.step()
-            if epoch % self.model_save == 0:
-                path = f"./checkpoints/VST_deepfake_modality{self.modality}_batch{self.batch_size}_epoch{epoch}.pth"
-                torch.save({
-                    'epoch': epoch,
-                    'checkpoint': self.model.state_dict(),
-                    'optimizer': self.optimizer.state_dict(),
-                }, path)
-                train_loss_draw.draw(epoch)
-                val_loss_draw.draw(epoch)
                     

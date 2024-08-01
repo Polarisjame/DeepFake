@@ -7,12 +7,13 @@ import cv2
 import numpy as np
 from datetime import datetime
 import tensorflow as tf
-import moviepy.editor as mp
+# import moviepy.editor as mp
 import torch
 import librosa
 import soundfile as sf
 import matplotlib.pyplot as plt
 from torch import nn
+from pydub import AudioSegment
 
 REF_SEC=5
 
@@ -34,6 +35,16 @@ def extract_frames(video_path, num_frames, target_size, trans):
     
     cap.release()
     return frames
+
+def extract_wav(video_path):
+    path_id = random.randint(0,10000)
+    audio_path = f'./extract_wav/extracted_audio_{path_id}.wav'
+    
+    track = AudioSegment.from_file(video_path, "mp4")
+    file_handle = track.set_frame_rate(16000).export(audio_path, format="wav")
+    y, sr = librosa.load(audio_path, sr=16000)
+    feature = y
+    return feature
 
 # def preprocess_frames(frames,target_size):
 #     preprocessed_frames = []
@@ -88,16 +99,6 @@ def split_audio_wav_thread(sub_lists, extract_audio_wav_path, logger):
             logger(f"Thread:{thread_id} Processed {index} Files")
         video = mp.VideoFileClip(video_path)
         video.audio.write_audiofile(target_dir, verbose=False, logger=None)
-
-def extract_wav(video_path):
-    path_id = random.randint(0,10000)
-    audio_path = f'./extract_wav/extracted_audio_{path_id}.wav'
-    
-    video = mp.VideoFileClip(video_path)
-    video.audio.write_audiofile(audio_path, verbose=False, logger=None, fps=16000)
-    y, sr = librosa.load(audio_path, sr=16000)
-    feature = y
-    return feature
 
 def process_list(items, event: threading.Event, extract_video_tensor_path, logger, num_frames):
     # 创建5个线程，每个线程处理一个列表项
@@ -201,7 +202,7 @@ class Drawer(object):
         self.log_list = []
 
     def update(self, val, n=1):
-        self.log_list.append(val.cpu().detach())
+        self.log_list.append(val)
         
     def draw(self, epoch):
         length = len(self.log_list)
@@ -220,7 +221,7 @@ class AverageMeter(object):
         self.count = 0
 
     def update(self, val, n=1):
-        self.val = val.cpu().detach()
+        self.val = val
         self.sum += val * n
         self.count += n
         if self.count > 0:
