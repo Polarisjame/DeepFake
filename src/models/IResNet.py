@@ -1,8 +1,8 @@
 from einops import rearrange
 import torch
 import torch.nn as nn
-from src.resnet34 import Res34
-from src.InceptionResV2 import Inception_ResNetv2
+from src.models.resnet34 import Res34
+from src.models.InceptionResV2 import Inception_ResNetv2
 import torch.nn.functional as F
 
 

@@ -6,14 +6,14 @@ from data.data_process import DeepFakeSet
 from src.trainer import Trainer, weights_init
 from config import get_opt
 # from src.VST.video_swin_transformer import VideoClassifier
-from src.video_swin_transformer import VideoClassifier
-from src.swin_transformer2d import SwinTransformerV2
-from src.audioTransformer import Audio2D
-from src.ModalFusion import FusionModel
-from src.IResNet import InceptionVideoClassifier
+from src.models.video_swin_transformer import VideoClassifier
+from src.models.swin_transformer2d import SwinTransformerV2
+from src.models.audioTransformer import Audio2D
+from src.models.ModalFusion import FusionModel
+from src.models.IResNet import InceptionVideoClassifier
 import json
 from torch import cuda
-from src.utils import Logger, load_pretrained, load_pre_fused
+from src.utils import Logger, load_pretrained, load_pre_fused, seed_torch
 import signal
 import threading
 from transformers import Wav2Vec2Model, Wav2Vec2Processor
@@ -27,8 +27,6 @@ def shut_sub_prog(event: threading.Event):
     event.set()
 
 def train(args, logger):
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
     processor=None
     if args.modality == 'video':
         # model = VideoClassifier(args, logger, num_classes=1)
@@ -54,19 +52,14 @@ def train(args, logger):
     data = DeepFakeSet(args, logger=logger)
     data.setup(event)
     device = 'cuda' if cuda.is_available() else 'cpu'
-    trainer = Trainer(model, args, device, logger, processor)
-    if args.Resume:
-        if args.modality == 'fused':
-            del model,trainer
-            torch.cuda.empty_cache()
-            load_pre_fused(args, VideoE, AudioE, PAudioE, logger)
-            model = FusionModel(args, VideoE, AudioE, PAudioE)
-            trainer = Trainer(model, args, device, logger, processor)
-        else:
-            trainer.load_ckpt(args)
-    if not args.skip_learning:
-        trainer.train(data)
+    trainer = Trainer(model, args, device, data, logger, processor)
     
+    if args.Resume:
+        trainer.load_ckpt(args)
+    if not (args.skip_learning or args.val_model):
+        trainer.train()
+    if args.val_model:
+        trainer.eval(data.val_dataloader(),0,0,0,None)
     # Produce submit.csv
     result = trainer.submit(data)
     fileName='prediction.csv'
@@ -83,4 +76,5 @@ if __name__ == '__main__':
     atexit.register(handle_exit)
     signal.signal(signal.SIGTERM, handle_exit)
     signal.signal(signal.SIGINT, handle_exit)
+    seed_torch(opt.random_seed)
     train(opt, logger)

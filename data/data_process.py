@@ -6,6 +6,7 @@ from PIL import Image
 from torch.utils import data
 import pandas as pd
 from torch.utils.data import DataLoader, DistributedSampler
+from data.cuda_dataloader import CudaDataLoader
 import sys
 sys.path.append('../')
 from src.utils import *
@@ -38,7 +39,7 @@ class DeepFake(data.Dataset):
         self.modality = args.modality
         self.target_size = 224
         if test or not train:
-            self.transforms = T.Compose([
+            self.transform = T.Compose([
                 T.Resize(self.target_size),
                 T.CenterCrop(self.target_size),
                 T.ToTensor(),
@@ -178,7 +179,8 @@ class DeepFakeSet():
         if self.modality == 'paudio':
             dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=collate_opt)
         elif self.modality == 'fused':
-            dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=fusion_collate)
+            dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, pin_memory=True, num_workers=self.num_workers, collate_fn=fusion_collate)
+            dataloader = CudaDataLoader(dataloader, 'cuda')
         else:
             dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
         # for data in dataloader:
@@ -190,7 +192,8 @@ class DeepFakeSet():
         if self.modality == 'paudio':
             dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, collate_fn=collate_opt)
         elif self.modality == 'fused':
-            dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, collate_fn=fusion_collate)
+            dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, pin_memory=True, num_workers=self.num_workers, collate_fn=fusion_collate)
+            dataloader = CudaDataLoader(dataloader, 'cuda')
         else:
             dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
         return dataloader

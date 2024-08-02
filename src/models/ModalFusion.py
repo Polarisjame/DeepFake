@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from src.video_swin_transformer import Mlp
+from src.models.video_swin_transformer import Mlp
 import torch.nn.functional as F
 from einops import rearrange
 
