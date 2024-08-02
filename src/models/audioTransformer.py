@@ -1,6 +1,6 @@
 from torch import nn
 import torch.nn.functional as F
-from src.video_swin_transformer import Mlp
+from src.models.video_swin_transformer import Mlp
 
 class Audio2D(nn.Module):
     def __init__(self, args, wav_model, in_feat=768, num_classes=2, use_feat=False) -> None:

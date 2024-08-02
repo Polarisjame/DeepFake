@@ -4,7 +4,6 @@ def get_opt():
     parser = argparse.ArgumentParser(description="Deepfake")
     
     # DATA
-    parser.add_argument('--skip_learning', action='store_true', help='skip train stage and get submission')
     parser.add_argument('--data_root', type=str, default=r'/data/lingfeng/full_data/phase1')
     parser.add_argument('--modality', type=str, default='audio')
     parser.add_argument('--num_frames', type=int, default=32, help='extract fixed number of frames')
@@ -21,15 +20,19 @@ def get_opt():
     parser.add_argument('--audio_ckpt_path',type=str,default=None)
     parser.add_argument('--video_ckpt_path',type=str,default=None)
     parser.add_argument('--paudio_ckpt_path',type=str,default=None)
+    parser.add_argument('--fused_ckpt_path',type=str,default=None)
     parser.add_argument('--Resume', action='store_true', help='resume model from ckpt')
 
     # Learning
+    parser.add_argument('--random_seed', type=int, default=42, help='torch random seed')
     parser.add_argument('-b', '--batch_size', type=int, default=8, help='input batch size for training (default: 32)')
     parser.add_argument('-cuda', '--use_cuda', type=bool, default=True, help='Use cuda or not')
     parser.add_argument('--l2_decacy', type=float, default=0.05)
     parser.add_argument('-e', '--epochs', type=int, default=50, help='input training epoch for training (default: 50)')
     parser.add_argument('-lr', '--learning_rate', type=float, default=1e-4, help='input learning rate for training (default: 1e-4)')
     parser.add_argument('--model_save', type=int, default=5, help='save model per %d round')
+    parser.add_argument('--skip_learning', action='store_true', help='skip train stage and get submission')
+    parser.add_argument('--val_model', action='store_true', help='Eval Model Performence on Eval Set')
     
     # Log
     parser.add_argument('--log_step', type=int, default=10)
