@@ -247,11 +247,12 @@ class iResNet(nn.Module):
 class NeXtVLAD(nn.Module):
     """NeXtVLAD layer implementation"""
 
-    def __init__(self, dim=1024, num_clusters=64, lamb=2, groups=8, max_frames=300):
+    def __init__(self, dim=1024, num_clusters=64, lamb=2, groups=8, max_frames=300, bn_mom = 0.1):
         super(NeXtVLAD, self).__init__()
         self.num_clusters = num_clusters
         self.dim = dim
         self.alpha = 0
+        self.bn_mom = bn_mom
         self.K = num_clusters
         self.G = groups
         self.group_size = int((lamb * dim) // self.G)
@@ -263,8 +264,8 @@ class NeXtVLAD(nn.Module):
         self.fc_g = nn.Linear(lamb * dim, self.G)
         self.cluster_weights2 = nn.Parameter(torch.rand(1, self.group_size, self.K))
 
-        self.bn0 = nn.BatchNorm1d(max_frames)
-        self.bn1 = nn.BatchNorm1d(1)
+        self.bn0 = nn.BatchNorm1d(max_frames, momentum=self.bn_mom)
+        self.bn1 = nn.BatchNorm1d(1, momentum=self.bn_mom)
 
     def forward(self, x, mask=None):
         #         print(f"x: {x.shape}")
@@ -338,20 +339,21 @@ class InceptionVideoClassifier(nn.Module):
         #     self.inceptionRes.load_state_dict(torch.load(pretrained_resnet))
         # self.inceptionRes = Res34(args, 3, 1024)
         dim = 1536
+        self.bn_mom = args.bn_momentum
         self.use_feat = use_feat
         self.drop_rate = drop_rate
         self.group_size = int((lamb * dim) // groups)
         self.fc0 = nn.Linear(num_clusters * self.group_size, hidden_size)
-        self.bn0 = nn.BatchNorm1d(1)
+        self.bn0 = nn.BatchNorm1d(1, momentum=self.bn_mom)
         self.fc1 = nn.Linear(hidden_size, hidden_size // gating_reduction)
-        self.bn1 = nn.BatchNorm1d(1)
+        self.bn1 = nn.BatchNorm1d(1, momentum=self.bn_mom)
         self.fc2 = nn.Linear(hidden_size // gating_reduction, hidden_size)
         if not use_feat:
             self.logistic = nn.Linear(hidden_size, num_classes)
             self.classify_drop = nn.Dropout(args.classify_drop)
 
         self.video_nextvlad = NeXtVLAD(dim, max_frames=args.num_frames, lamb=lamb,
-                                        num_clusters=num_clusters, groups=groups)
+                                        num_clusters=num_clusters, groups=groups, bn_mom=self.bn_mom)
 
     def forward(self, x, mask=None):
         # x [B T C H W]

@@ -90,30 +90,30 @@ class MemTracker(object):
         frameinfo = inspect.stack()[1]
         where_str = frameinfo.filename + ' line ' + str(frameinfo.lineno) + ': ' + frameinfo.function
 
-        if self.cnt % 50 == 0:
-        
-            with open(self.gpu_profile_fn, 'a+') as f:
+        if self.cnt % 500 == 0:
+            with torch.no_grad():
+                with open(self.gpu_profile_fn, 'a+') as f:
 
-                if self.begin:
-                    f.write(f"GPU Memory Track | {datetime.datetime.now():%d-%b-%y-%H:%M:%S} |"
+                    if self.begin:
+                        f.write(f"GPU Memory Track | {datetime.datetime.now():%d-%b-%y-%H:%M:%S} |"
+                                f" Total Tensor Used Memory:{self.get_tensor_usage():<7.1f}Mb"
+                                f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n\n")
+                        self.begin = False
+
+                    if self.print_detail is True:
+                        ts_list = [(tensor.size(), tensor.dtype) for tensor in self.get_tensors()]
+                        new_tensor_sizes = {(type(x),
+                                            tuple(x.size()),
+                                            ts_list.count((x.size(), x.dtype)),
+                                            np.prod(np.array(x.size()))*get_mem_space(x.dtype)/1024**2,
+                                            x.dtype) for x in self.get_tensors()}
+                        for t, s, n, m, data_type in new_tensor_sizes - self.last_tensor_sizes:
+                            f.write(f'+ | {str(n)} * Size:{str(s):<20} | Memory: {str(m*n)[:6]} M | {str(t):<20} | {data_type}\n')
+                        for t, s, n, m, data_type in self.last_tensor_sizes - new_tensor_sizes:
+                            f.write(f'- | {str(n)} * Size:{str(s):<20} | Memory: {str(m*n)[:6]} M | {str(t):<20} | {data_type}\n')
+
+                        self.last_tensor_sizes = new_tensor_sizes
+
+                    f.write(f"\nAt {where_str:<50}"
                             f" Total Tensor Used Memory:{self.get_tensor_usage():<7.1f}Mb"
                             f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n\n")
-                    self.begin = False
-
-                if self.print_detail is True:
-                    ts_list = [(tensor.size(), tensor.dtype) for tensor in self.get_tensors()]
-                    new_tensor_sizes = {(type(x),
-                                        tuple(x.size()),
-                                        ts_list.count((x.size(), x.dtype)),
-                                        np.prod(np.array(x.size()))*get_mem_space(x.dtype)/1024**2,
-                                        x.dtype) for x in self.get_tensors()}
-                    for t, s, n, m, data_type in new_tensor_sizes - self.last_tensor_sizes:
-                        f.write(f'+ | {str(n)} * Size:{str(s):<20} | Memory: {str(m*n)[:6]} M | {str(t):<20} | {data_type}\n')
-                    for t, s, n, m, data_type in self.last_tensor_sizes - new_tensor_sizes:
-                        f.write(f'- | {str(n)} * Size:{str(s):<20} | Memory: {str(m*n)[:6]} M | {str(t):<20} | {data_type}\n')
-
-                    self.last_tensor_sizes = new_tensor_sizes
-
-                f.write(f"\nAt {where_str:<50}"
-                        f" Total Tensor Used Memory:{self.get_tensor_usage():<7.1f}Mb"
-                        f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n\n")

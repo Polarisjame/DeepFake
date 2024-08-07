@@ -6,7 +6,7 @@ from einops import rearrange
 
 class FusionModel(nn.Module):
     
-    def __init__(self, args, VideoExtractor, AudioExtractor, PAudioExtractor, video_dim=1024, audio_dim=1024, paudio_dim=768, common_dim=512):
+    def __init__(self, args, VideoExtractor, AudioExtractor, PAudioExtractor, out_dim=2, video_dim=1024, audio_dim=1024, paudio_dim=768, common_dim=512):
         super(FusionModel, self).__init__()
         self.vExtract = VideoExtractor
         self.aExtract = AudioExtractor
@@ -19,11 +19,11 @@ class FusionModel(nn.Module):
         self.values = nn.Linear(common_dim, common_dim)
         self.scaling = common_dim ** -0.5
         self.attn_proj = nn.Linear(common_dim*3, 768, bias=False)
-        self.norm = nn.BatchNorm1d(768)
-        self.classify = Mlp(768, 256, 2)
+        self.norm = nn.BatchNorm1d(768, momentum=0.08)
+        self.classify = Mlp(768, 256, out_dim)
         self.drop = nn.Dropout(args.classify_drop)
-        self.out_act = nn.Softmax(-1)
-        # self.out_act = nn.Sigmoid()
+        # self.out_act = nn.Softmax(-1)
+        self.out_act = nn.Sigmoid()
         
     def forward(self, feature: tuple):
         video_feat, audio_feat, paudio_feat = feature
@@ -49,6 +49,9 @@ class FusionModel(nn.Module):
         feat = self.norm(self.attn_proj(feat))
         feat = self.drop(feat)
         feat = self.classify(feat)
+        
+        # feat = feat[:,1]
+        # print(feat)
         
         # Linear Proj
         # v_x = self.video_projection(v_x)

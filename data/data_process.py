@@ -143,9 +143,9 @@ class DeepFake(data.Dataset):
             audio_feat = self.transform(Image.open(os.path.join(self.audio_path , file_root.split('/')[-1][:-4] + '.jpg')).convert('RGB'))
             paudio_feat = extract_wav(file_root)
             feature = {"Video":video_feat, "Audio":audio_feat, "PAudio":paudio_feat}
-        label_tensor = torch.zeros(2)
-        label_tensor[label] = 1
-        # label = torch.tensor(label,dtype=torch.float32)
+        # label_tensor = torch.zeros(2)
+        # label_tensor[label] = 1
+        label_tensor = torch.tensor(label,dtype=torch.float32)
         return feature, label_tensor, file_root.split('/')[-1]
 
     def __len__(self):

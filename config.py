@@ -21,11 +21,13 @@ def get_opt():
     parser.add_argument('--video_ckpt_path',type=str,default=None)
     parser.add_argument('--paudio_ckpt_path',type=str,default=None)
     parser.add_argument('--fused_ckpt_path',type=str,default=None)
+    parser.add_argument('--bn_momentum',type=float,default=0.1, help='BatchNorm Momentum')
     parser.add_argument('--Resume', action='store_true', help='resume model from ckpt')
 
     # Learning
     parser.add_argument('--random_seed', type=int, default=42, help='torch random seed')
     parser.add_argument('-b', '--batch_size', type=int, default=8, help='input batch size for training (default: 32)')
+    parser.add_argument('--accum_step', type=int, default=4, help='Gradient Accumulation Steps')
     parser.add_argument('-cuda', '--use_cuda', type=bool, default=True, help='Use cuda or not')
     parser.add_argument('--l2_decacy', type=float, default=0.05)
     parser.add_argument('-e', '--epochs', type=int, default=50, help='input training epoch for training (default: 50)')

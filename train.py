@@ -46,12 +46,12 @@ def train(args, logger):
         wav_model = Wav2Vec2Model.from_pretrained("./checkpoints/wav2vec2-base-960h")
         PAudioE = Audio2D(args, wav_model,num_classes=1, use_feat=True)
         processor = Wav2Vec2Processor.from_pretrained("./checkpoints/wav2vec2-base-960h",local_files_only=True)
-        model = FusionModel(args, VideoE, AudioE, PAudioE)
+        model = FusionModel(args, VideoE, AudioE, PAudioE, out_dim=1)
     event = threading.Event()
     atexit.register(shut_sub_prog, event)
     data = DeepFakeSet(args, logger=logger)
     data.setup(event)
-    device = 'cuda' if cuda.is_available() else 'cpu'
+    device = torch.device("cuda:0") if cuda.is_available() else 'cpu'
     trainer = Trainer(model, args, device, data, logger, processor)
     
     if args.Resume:
