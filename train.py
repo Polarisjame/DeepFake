@@ -41,7 +41,7 @@ def train(args, logger):
         model = Audio2D(args, wav_model,num_classes=1)
     elif args.modality == 'fused':
         AudioE = SwinTransformerV2(num_classes=1, use_feat=True, embed_dim=128,num_heads=[4,8,16,32 ],depths=[2,2,18,2 ],pretrained_window_sizes=(16,16,16,16))
-        load_pretrained(args, AudioE, logger)
+        # load_pretrained(args, AudioE, logger)
         VideoE = InceptionVideoClassifier(args, 1, drop_rate=args.swin_drop, use_feat=True)
         wav_model = Wav2Vec2Model.from_pretrained("./checkpoints/wav2vec2-base-960h")
         PAudioE = Audio2D(args, wav_model,num_classes=1, use_feat=True)

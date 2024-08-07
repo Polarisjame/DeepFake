@@ -13,7 +13,7 @@ if true; then
   fi
   modality=fused # video audio paudio fused
   num_frames=32
-  num_workers=6
+  num_workers=4
 
   # pretrain
   video_pretrained_dir='checkpoints/swin_small_patch244_window877_kinetics400_1k.pth'

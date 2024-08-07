@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import os
 import numpy as np
 import torch
@@ -91,9 +92,15 @@ class Trainer():
             path_checkpoint = args.fused_ckpt_path 
             checkpoint = torch.load(path_checkpoint,map_location=device)
             state_dict = checkpoint['checkpoint']
-            print(state_dict)
-            del state_dict['classify']
-            
+            new_dict = OrderedDict()
+            for k,v in state_dict.items():
+                if not 'classify' in k:
+                    new_dict[k] = v
+            self.model_s.load_state_dict(new_dict, strict=False)
+            torch.nn.init.constant_(self.model_s.classify.fc1.bias, 0.)
+            torch.nn.init.constant_(self.model_s.classify.fc1.weight, 0.) 
+            torch.nn.init.constant_(self.model_s.classify.fc2.bias, 0.)
+            torch.nn.init.constant_(self.model_s.classify.fc2.weight, 0.) 
         else:
             if self.modality == 'audio':
                 path_checkpoint = args.audio_ckpt_path   
@@ -102,8 +109,8 @@ class Trainer():
             logger(f"Load Finetuned Model From:{path_checkpoint}")
             checkpoint = torch.load(path_checkpoint,map_location=device)
             state_dict = checkpoint['checkpoint']
+            self.model_s.load_state_dict(state_dict, strict=False) 
         
-        self.model_s.load_state_dict(state_dict, strict=False) 
         self.model = DataParallel(self.model_s, device_ids=self.device_ids).to(self.device_ids[0]) 
         # self.optimizer.load_state_dict(checkpoint['optimizer']) 
         self.start_epoch = checkpoint['epoch'] + 1  
@@ -242,8 +249,8 @@ class Trainer():
                     elif self.modality == 'fused':
                         feat_dict,label,_ = batch
                         label = label.to(self.device)
-                        video_feat = feat_dict['Video'].to(self.device)
-                        audio_feat = feat_dict['Audio'].to(self.device)
+                        video_feat = feat_dict['Video']
+                        audio_feat = feat_dict['Audio']
                         paudio_wav = feat_dict['PAudio']
                         paudio_feat = self.processor(paudio_wav, sampling_rate=16000, return_tensors="pt", padding='longest').input_values.to(self.device)
                         feature = (video_feat, audio_feat, paudio_feat)
