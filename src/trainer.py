@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch.nn import BCELoss,BCEWithLogitsLoss,CrossEntropyLoss,Sigmoid
 from torch.optim import AdamW, lr_scheduler, SGD, RMSprop
-from src.utils import Logger, AverageMeter, Drawer, plt
+from src.utils import Logger, AverageMeter, Drawer, plt, GpuInfoTracker
 from data.data_process import DeepFakeSet
 from torch.nn.parallel import DataParallel 
 import torch.nn as nn
@@ -65,6 +65,8 @@ class Trainer():
         self.log_step = args.log_step
         self.start_epoch = 0
         self.accum_step = args.accum_step
+        self.align_loss_rate = args.align_loss_rate
+        self.gpu_log = GpuInfoTracker()
         logger(getModelSize(self.model_s,logger))
         
         
@@ -92,15 +94,13 @@ class Trainer():
             path_checkpoint = args.fused_ckpt_path 
             checkpoint = torch.load(path_checkpoint,map_location=device)
             state_dict = checkpoint['checkpoint']
-            new_dict = OrderedDict()
-            for k,v in state_dict.items():
-                if not 'classify' in k:
-                    new_dict[k] = v
-            self.model_s.load_state_dict(new_dict, strict=False)
-            torch.nn.init.constant_(self.model_s.classify.fc1.bias, 0.)
-            torch.nn.init.constant_(self.model_s.classify.fc1.weight, 0.) 
-            torch.nn.init.constant_(self.model_s.classify.fc2.bias, 0.)
-            torch.nn.init.constant_(self.model_s.classify.fc2.weight, 0.) 
+            # new_dict = OrderedDict()
+            # for k,v in state_dict.items():
+            #     if not 'classify' in k:
+            #         new_dict[k] = v
+            self.model_s.load_state_dict(state_dict, strict=False)
+            # torch.nn.init.constant_(self.model_s.classify.fc2.bias, 0.)
+            # torch.nn.init.xavier_uniform_(self.model_s.classify.fc2.weight) 
         else:
             if self.modality == 'audio':
                 path_checkpoint = args.audio_ckpt_path   
@@ -113,20 +113,24 @@ class Trainer():
         
         self.model = DataParallel(self.model_s, device_ids=self.device_ids).to(self.device_ids[0]) 
         # self.optimizer.load_state_dict(checkpoint['optimizer']) 
-        self.start_epoch = checkpoint['epoch'] + 1  
-        self.scheduler = lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=(self.train_epochs-self.start_epoch+1)*int(len(self.trainloader)/self.accum_step))
+        # self.start_epoch = checkpoint['epoch'] + 1  
+        self.scheduler = lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=int(len(self.trainloader)/self.accum_step)) # (self.train_epochs-self.start_epoch+1)*
         logger("Load Finetuned Model Succesfully")
         
-    def run_batch(self, feature, label):
+    def run_batch(self, feature, label, gpu_log=None):
         start = time.time()
-        model_out = self.model(feature)
+        model_out,loss_diff = self.model(feature)
+        loss_diff = torch.mean(loss_diff)
+        gpu_log(f"Alignment Loss:{loss_diff.item()}")
         fini = time.time()
-        print(f"Model Run : elapse {fini-start} secs")
+        gpu_log(f"Model Run : elapse {fini-start} secs")
         start = time.time()
         # print(model_out, label)
-        loss = self.lossF(model_out, label)
+        loss = self.lossF(model_out, label) + self.align_loss_rate*loss_diff
+        gpu_log(f"Comb Loss:{loss.item()}")
+        gpu_log(model_out.cpu(), '\n', label.cpu(), '\n', f'Loss_Val:{loss.item()}')
         fini = time.time()
-        print(f"Loss Cal : elapse {fini-start} secs")
+        gpu_log(f"Loss Cal : elapse {fini-start} secs")
         start = time.time()
         with torch.no_grad():
             # self.logger(f"{model_out}, {label}, {loss}")
@@ -137,7 +141,7 @@ class Trainer():
             # correct = torch.sum(indices == label_ind.to('cpu'))
             acc = correct.numpy() * 1.0 / len(label)
         fini = time.time()
-        print(f"Acc Cal : elapse {fini-start} secs")
+        gpu_log(f"Acc Cal : elapse {fini-start} secs")
         return {
             'loss':loss,
             'acc':acc
@@ -177,7 +181,7 @@ class Trainer():
         print(result_dict)
         return result_dict
                 
-    def eval(self, dataloader, epoch, t, lr,val_loss_draw: Drawer):
+    def eval(self, dataloader, epoch, t, lr,val_loss_draw: Drawer, gpu_log: GpuInfoTracker):
         logger = self.logger
         loss_stat = AverageMeter()
         with torch.no_grad():
@@ -199,7 +203,7 @@ class Trainer():
                     feature,label,_ = batch
                     feature = feature.to(self.device)
                     label = label.to(self.device)
-                run_stats = self.run_batch(feature, label)
+                run_stats = self.run_batch(feature, label, gpu_log)
                 loss = run_stats['loss']                    
                 if t % self.log_step == 0:
                     logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Val Loss {:3.5f} | Val Acc {:1.5f} '.format(epoch, t, lr,
@@ -215,6 +219,7 @@ class Trainer():
         trainloader = self.trainloader
         valloader = self.valloader
         logger = self.logger
+        gpu_log = self.gpu_log
         gpu_tracker = MemTracker(path='./gpu_track/')
         
         loss_stat = AverageMeter()
@@ -234,14 +239,14 @@ class Trainer():
                     self.model.eval()
                     self.model.to(self.device)
                     torch.cuda.empty_cache()
-                    t = self.eval(dataloader,epoch,t,lr,val_loss_draw)
+                    t = self.eval(dataloader,epoch,t,lr,val_loss_draw, gpu_log)
                     continue
                 self.optimizer.zero_grad()
                 start = time.time()
                 for iter_id, batch in enumerate(dataloader):
-                    print(f"---------------Iter: {iter_id}-------------")
+                    gpu_log(f"---------------Iter: {iter_id}-------------")
                     fini = time.time()
-                    print(f"Dataload : elapse {fini-start} secs")
+                    gpu_log(f"Dataload : elapse {fini-start} secs")
                     start = time.time()
                     if self.modality == 'paudio':
                         audio_wav,label,_ = batch
@@ -260,8 +265,8 @@ class Trainer():
                         label = label.to(self.device)
                     gpu_tracker.track()
                     fini = time.time()
-                    print(f"Feat Prepare : elapse {fini-start} secs")
-                    run_stats = self.run_batch(feature, label)
+                    gpu_log(f"Feat Prepare : elapse {fini-start} secs")
+                    run_stats = self.run_batch(feature, label, gpu_log)
 
                     del feature,label
                     
@@ -278,21 +283,21 @@ class Trainer():
                     loss.backward()
                     
                     fini = time.time()
-                    print(f"Backward : elapse {fini-start} secs")
+                    gpu_log(f"Backward : elapse {fini-start} secs")
                     if (iter_id+1) % self.accum_step == 0:
                         start = time.time()
                         t+=1
                         if t % self.log_step == 0:
                             lr = self.optimizer.param_groups[0]['lr']
                             # modelsize(self.model,feature, 4, logger)
-                            logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Train Loss {:3.5f} | Train Acc {:1.5f} | MemUsage {:.4f}'.format(epoch, t, lr,
-                                                                                                        loss_item, run_stats['acc'], stage1))
+                            logger('| epoch {:2d} | step {:4d} | lr {:.4E} | Train Loss Avg {:3.5f} | Train Acc {:1.5f} | MemUsage {:.4f}'.format(epoch, t, lr,
+                                                                                                        loss_stat.avg, run_stats['acc'], stage1))
                             torch.cuda.empty_cache()
                         self.optimizer.step()  
                         self.scheduler.step()  
                         self.optimizer.zero_grad()
                         fini = time.time()
-                        print(f"Optimizer Step : elapse {fini-start} secs")
+                        gpu_log(f"Optimizer Step : elapse {fini-start} secs")
                         
                     
                     start = time.time()
@@ -310,7 +315,8 @@ class Trainer():
                     loss_stat.update(loss_item)
                     gpu_tracker.step()
                     fini = time.time()
-                    print(f"Track: elapse {fini-start} secs")
+                    gpu_log(f"Track: elapse {fini-start} secs")
+                    gpu_log.step()
                 logger(f'Phase:{phase}, Avg Loss:{loss_stat.avg}')
             loss_stat.reset()
             train_loss_draw.reset()

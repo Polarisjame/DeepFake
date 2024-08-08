@@ -11,6 +11,8 @@ class FusionModel(nn.Module):
         self.vExtract = VideoExtractor
         self.aExtract = AudioExtractor
         self.paExtract = PAudioExtractor
+        self.soft=args.soft
+        
         self.video_projection = nn.Linear(video_dim, common_dim)
         self.audio_projection = nn.Linear(audio_dim, common_dim)
         self.paudio_projection = nn.Linear(paudio_dim, common_dim)
@@ -32,10 +34,15 @@ class FusionModel(nn.Module):
         pa_x = self.paExtract(paudio_feat)
         
         # Attn
-        v_x = self.video_projection(v_x.unsqueeze(1))
-        a_x = self.audio_projection(a_x.unsqueeze(1))
-        pa_x = self.paudio_projection(pa_x.unsqueeze(1))
-        comb_x = torch.cat((v_x,a_x,pa_x),dim=1) # B 3 C
+        v_x = self.video_projection(v_x)
+        a_x = self.audio_projection(a_x)
+        pa_x = self.paudio_projection(pa_x)
+        
+        loss_va = self.cal_nce_loss(v_x,a_x)
+        loss_vpa = self.cal_nce_loss(v_x,pa_x)
+        loss_align = (loss_va + loss_vpa)/2
+        
+        comb_x = torch.cat((v_x.unsqueeze(1),a_x.unsqueeze(1),pa_x.unsqueeze(1)),dim=1) # B 3 C
         
         q = self.queries(comb_x)
         k = self.keys(comb_x)
@@ -65,34 +72,30 @@ class FusionModel(nn.Module):
         
         del v_x,a_x,pa_x,comb_x,q,k,v,att,out
         
-        return self.out_act(feat.squeeze())
+        return self.out_act(feat.squeeze()), loss_align
         
         
-    # def cal_nce_loss(self,video_proj,audio_proj):
-    #     # conduct positive and negative sample
-    #     b, _ = video_proj.shape
-    #     m1vsm2 = torch.einsum('bmd,bnd -> bbmn', video_proj, audio_proj)
-    #     m1_vs_m2 = m1vsm2.view(b,b,-1)
-    #     sim_pos = torch.einsum("bbn->bn", m1_vs_m2) 
-    #     lse_pos = torch.logsumexp(
-    #         sim_pos/self.soft_param,
-    #         1,
-    #     )
-    #     m1vsm2_all = torch.einsum('bmd,bnd -> bbmn', video_proj, audio_proj)
-    #     m1_vs_m2_all = m1vsm2_all.view(b,-1)
-    #     logsumexp_all_m1_vs_m2all = torch.logsumexp(
-    #     m1_vs_m2_all / self.soft_param,
-    #     1,
-    #     )
-    #     m2vsm1_all = torch.einsum('bmd,bnd -> bbmn', audio_proj, video_proj)
-    #     m2_vs_m1_all = m2vsm1_all.view(b,-1)
-    #     logsumexp_all_m2_vs_m1all = torch.logsumexp(
-    #     m2_vs_m1_all / self.soft_param,
-    #     1,
-    #     )
-    #     loss_m1_vs_m2 = logsumexp_all_m1_vs_m2all - lse_pos
-    #     loss_m1_vs_m2 = torch.mean(loss_m1_vs_m2)
-    #     loss_m2_vs_m1 = logsumexp_all_m2_vs_m1all - lse_pos
-    #     loss_m2_vs_m1 = torch.mean(loss_m2_vs_m1)
-    #     return loss_m1_vs_m2 + loss_m2_vs_m1
-        
+    def cal_nce_loss(self,p_a,p_b):
+        # conduct positive and negative sample
+        m1vsm2 = torch.einsum('bd,bd -> b', p_a, p_b).unsqueeze(-1)
+        lse_pos = torch.logsumexp(
+            m1vsm2/self.soft,
+            1,
+        )
+        m1vsm2_all=torch.einsum('bd,cd -> bc', p_a, p_b)
+        logsumexp_all_m1_vs_m2all = torch.logsumexp(
+            m1vsm2_all / self.soft,
+            1,
+        )
+        m2vsm1_all=torch.einsum('bd,cd -> bc', p_b, p_a)
+        logsumexp_all_m2_vs_m1all = torch.logsumexp(
+            m2vsm1_all / self.soft,
+            1,
+        )
+        loss_m1_vs_m2 = logsumexp_all_m1_vs_m2all - lse_pos
+        loss_m1_vs_m2 = torch.mean(loss_m1_vs_m2)
+        loss_m2_vs_m1 = logsumexp_all_m2_vs_m1all - lse_pos
+        loss_m2_vs_m1 = torch.mean(loss_m2_vs_m1)
+        return loss_m1_vs_m2 + loss_m2_vs_m1
+    
+    

@@ -13,7 +13,7 @@ from src.models.ModalFusion import FusionModel
 from src.models.IResNet import InceptionVideoClassifier
 import json
 from torch import cuda
-from src.utils import Logger, load_pretrained, load_pre_fused, seed_torch
+from src.utils import Logger, load_pretrained, load_pre_fused, seed_torch, GpuInfoTracker
 import signal
 import threading
 from transformers import Wav2Vec2Model, Wav2Vec2Processor
@@ -59,7 +59,8 @@ def train(args, logger):
     if not (args.skip_learning or args.val_model):
         trainer.train()
     if args.val_model:
-        trainer.eval(data.val_dataloader(),0,0,0,None)
+        log = GpuInfoTracker()
+        trainer.eval(data.val_dataloader(),0,0,0,None, log)
     # Produce submit.csv
     result = trainer.submit(data)
     fileName='prediction.csv'

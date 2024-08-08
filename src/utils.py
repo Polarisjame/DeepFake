@@ -240,7 +240,21 @@ class Logger():
         
     def __delete__(self):
         self.f.close()
-        
+
+class GpuInfoTracker():
+    
+    def __init__(self):
+        self.log_step = 10
+        self.print = print
+        self.log_cnt = 0
+    
+    def __call__(self, *args):
+        if (self.log_cnt+1) % self.log_step == 0:
+            self.print(*args)
+    
+    def step(self):
+        self.log_cnt += 1
+
 def load_pre_fused(args, VE, AE, PAE, logger=None):
     device = torch.device('cpu')
     if args.audio_ckpt_path is not None:

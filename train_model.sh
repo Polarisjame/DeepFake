@@ -1,5 +1,5 @@
 #! /bin/bash
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=1,2,6
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # -------------------DeepFake Training Shell Script--------------------
@@ -21,6 +21,8 @@ if true; then
   
   batch_size=8
   accum_step=4
+  soft=2.3
+  align_loss_rate=1
   log_step=5
   bn_momentum=0.8
   video_pool=mean
@@ -29,14 +31,16 @@ if true; then
   num_hiddens=256
   l2_decacy=1e-3
   epochs=4
-  learning_rate=3e-4
+  learning_rate=1e-4
   model_save=500
   random_seed=42
   audio_ckpt_path='checkpoints/VST_deepfake_modalityaudio_batch48_epoch12.pth'
-  fused_ckpt_path='checkpoints/VST_deepfake_modalityfused_batch8_epoch2_step1999.pth'
+  fused_ckpt_path='checkpoints/VST_deepfake_modalityfused_batch8_epoch3_step2499.pth'
 
   nohup python3 -u train.py \
     --Resume\
+    --soft ${soft}\
+    --align_loss_rate ${align_loss_rate}\
     --data_root ${data_root}\
     --bn_momentum ${bn_momentum}\
     --accum_step ${accum_step}\
@@ -66,3 +70,4 @@ fi
     # --ckpt_path ${ckpt_path}\
     # --force_generate\
     # --Resume\
+    # --val_model\

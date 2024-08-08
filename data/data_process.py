@@ -180,7 +180,7 @@ class DeepFakeSet():
             dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, collate_fn=collate_opt)
         elif self.modality == 'fused':
             dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, pin_memory=True, num_workers=self.num_workers, collate_fn=fusion_collate)
-            dataloader = CudaDataLoader(dataloader, 'cuda')
+            # dataloader = CudaDataLoader(dataloader, 'cuda')
         else:
             dataloader = DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
         # for data in dataloader:
@@ -193,7 +193,7 @@ class DeepFakeSet():
             dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, collate_fn=collate_opt)
         elif self.modality == 'fused':
             dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, pin_memory=True, num_workers=self.num_workers, collate_fn=fusion_collate)
-            dataloader = CudaDataLoader(dataloader, 'cuda')
+            # dataloader = CudaDataLoader(dataloader, 'cuda')
         else:
             dataloader = DataLoader(self.valset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
         return dataloader
