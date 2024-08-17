@@ -1,0 +1,8 @@
+*.pth
+__pycache__
+*.log
+*.wav
+*.png
+*.csv
+checkpoints/*
+gpu_track/*
