@@ -9,7 +9,11 @@ if true; then
   if ${sample}; then
     data_root='/data/lingfeng/ffdv_phase1_sample'
   else
+<<<<<<< HEAD
     data_root='./data/raw_data'
+=======
+    data_root='/data/lingfeng/full_data/phase1'
+>>>>>>> origin/dev
   fi
   modality=fused # video audio paudio fused
   num_frames=32
