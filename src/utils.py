@@ -63,8 +63,8 @@ def extract_wav(video_path):
 def generate_mel_spectrogram(video_path, thread_id=0, n_mels=128, fmax=8000, target_size=(224, 224)):
     # 提取音频
     audio_path = f'extracted_audio_{thread_id}.wav'
-    video = mp.VideoFileClip(video_path)
-    video.audio.write_audiofile(audio_path, verbose=False, logger=None)
+    track = AudioSegment.from_file(video_path, "mp4")
+    file_handle = track.set_frame_rate(16000).export(audio_path, format="wav")
 
     # 加载音频文件
     y, sr = librosa.load(audio_path)
@@ -145,6 +145,24 @@ def fusion_collate(batch):
                 else:
                     feat_res_dict[k] = [v]
     return feat_res_dict, labels, filenames
+
+def fusion_collate_test(batch):
+    features, filenames = zip(*batch)
+    feat_res_dict = {}
+    for feat_dict in features:
+        for k,v in feat_dict.items():
+            if k != 'PAudio':
+                v = v.unsqueeze(0)
+                if k in feat_res_dict.keys():
+                    feat_res_dict[k] = torch.cat((feat_res_dict[k],v),dim=0)
+                else:
+                    feat_res_dict[k] = v
+            else:
+                if k in feat_res_dict.keys():
+                    feat_res_dict[k].append(v)
+                else:
+                    feat_res_dict[k] = [v]
+    return feat_res_dict, filenames
         
 class Drawer(object):
     def __init__(self, modality, phase):
@@ -197,8 +215,8 @@ class Logger():
 
 class GpuInfoTracker():
     
-    def __init__(self):
-        self.log_step = 10
+    def __init__(self, log_step=5):
+        self.log_step = log_step
         self.print = print
         self.log_cnt = 0
     
@@ -220,6 +238,26 @@ class Monitor():
     
     def step(self):
         self.log_cnt += 1
+
+class Mlp(nn.Module):
+    """ Multilayer perceptron."""
+
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
         
 def load_pre_fused(args, VE, AE, PAE, logger=None):
     device = torch.device('cpu')
@@ -254,9 +292,9 @@ def load_pre_fused(args, VE, AE, PAE, logger=None):
         logger(f"=> loaded successfully '{args.paudio_ckpt_path}'")
         
 def load_pretrained(config, model, logger):
-    logger(f"==============> Loading weight {config.audio_pretrained_dir} for fine-tuning......")
-    checkpoint = torch.load(config.audio_pretrained_dir, map_location=torch.device('cpu'))
-    state_dict = checkpoint['model']
+    logger(f"==============> Loading weight {config.audio_ckpt_path} for fine-tuning......")
+    checkpoint = torch.load(config.audio_ckpt_path, map_location=torch.device('cpu'))
+    state_dict = checkpoint['checkpoint']
     # delete relative_position_index since we always re-init it
     relative_position_index_keys = [k for k in state_dict.keys() if "relative_position_index" in k]
     for k in relative_position_index_keys:
@@ -350,5 +388,5 @@ def seed_torch(seed):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.enabled = False
+    torch.backends.cudnn.benchmark = False

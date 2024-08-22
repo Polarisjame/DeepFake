@@ -587,7 +587,6 @@ class SwinTransformerV2(nn.Module):
             self.active = nn.Sigmoid()
         # self.active = nn.Softmax(dim=-1)
 
-        self.apply(self._init_weights)
         for bly in self.layers:
             bly._init_respostnorm()
 

@@ -27,25 +27,34 @@ class DeepFake(data.Dataset):
             label_path = os.path.join(root, 'val_label.txt')
         elif test:
             self.dataset_path = os.path.join(root , 'phase2', 'testset1seen')
-            label_path = None
+            label_path = os.path.join(root, 'phase2', 'prediction.txt.csv')
+            predict_root = r'./prediction.csv'
         
         self.train = train
         self.test = test
-        self.filepaths = [os.path.join(self.dataset_path, video) for video in os.listdir(self.dataset_path)]
+        label_raw = pd.read_csv(label_path)
+        raw_dict = {}
         if not test:
-            label_raw = pd.read_csv(label_path)
-            raw_dict = {}
+            self.filepaths = [os.path.join(self.dataset_path, video) for video in os.listdir(self.dataset_path)]
             for index in range(len(label_raw)):
                 raw_dict[label_raw['video_name'][index]] = label_raw['target'][index]
             self.video_dict = raw_dict
-            self.label_raw = label_raw
+        else:
+            file_names = list(label_raw['video_name'])
+            if not os.path.exists(predict_root):
+                os.mknod(predict_root)
+                predicted_file_names = []
+            else:
+                predicted_dict = pd.read_csv(predict_root)
+                predicted_file_names = list(predicted_dict['video_name'])
+            self.filepaths = [os.path.join(self.dataset_path, video) for video in file_names if video not in predicted_file_names]
+        self.label_raw = label_raw
         self.num_frames = args.num_frames
         self.modality = args.modality
         self.target_size = 224
         if test or not train:
             self.transform = T.Compose([
                 T.Resize(self.target_size),
-                T.CenterCrop(self.target_size),
                 T.ToTensor(),
                 T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
             ])
@@ -183,10 +192,10 @@ class DeepFakeSet():
 
     def setup(self, event:threading.Event, stage=None):
         if stage == 'fit' or stage is None:
-            self.trainset = DeepFake(root=self.args.data_root, train=True, args=self.args, logger=self.logger, event=event)
-            # perm = torch.randperm(len(self.trainset))
-            # self.trainset = self.trainset[perm]
-            self.valset = DeepFake(root=self.args.data_root, train=False, args=self.args, logger=self.logger, event=event)
+            # self.trainset = DeepFake(root=self.args.data_root, train=True, args=self.args, logger=self.logger, event=event)
+            # # perm = torch.randperm(len(self.trainset))
+            # # self.trainset = self.trainset[perm]
+            # self.valset = DeepFake(root=self.args.data_root, train=False, args=self.args, logger=self.logger, event=event)
             self.testset = DeepFake(root=self.args.data_root, train=False, test=True, args=self.args, logger=self.logger, event=event)
         else:
             raise NotImplementedError
@@ -218,7 +227,7 @@ class DeepFakeSet():
         if self.modality == 'paudio':
             dataloader = DataLoader(self.testset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, collate_fn=collate_opt)
         elif self.modality == 'fused':
-            dataloader = DataLoader(self.testset, batch_size=self.batch_size, shuffle=False, pin_memory=True, num_workers=self.num_workers, collate_fn=fusion_collate)
+            dataloader = DataLoader(self.testset, batch_size=self.batch_size, shuffle=False, pin_memory=True, num_workers=self.num_workers, collate_fn=fusion_collate_test)
             # dataloader = CudaDataLoader(dataloader, 'cuda')
         else:
             dataloader = DataLoader(self.testset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)

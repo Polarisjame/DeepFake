@@ -6,7 +6,7 @@ from data.data_process import DeepFakeSet
 from src.trainer import Trainer, weights_init
 from config import get_opt
 # from src.VST.video_swin_transformer import VideoClassifier
-from src.models.video_swin_transformer import VideoClassifier
+# from src.models.video_swin_transformer import VideoClassifier
 from src.models.swin_transformer2d import SwinTransformerV2
 from src.models.audioTransformer import Audio2D
 from src.models.ModalFusion import FusionModel

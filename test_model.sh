@@ -1,5 +1,5 @@
 #! /bin/bash
-export CUDA_VISIBLE_DEVICES=0,1,3
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # -------------------DeepFake Training Shell Script--------------------
@@ -11,8 +11,9 @@ if true; then
   else
     data_root='./data/raw_data'
   fi
+  modality=video # video audio paudio fused
   num_frames=32
-  num_workers=4
+  num_workers=10
 
   # pretrain
   video_pretrained_dir='checkpoints/swin_small_patch244_window877_kinetics400_1k.pth'
@@ -34,9 +35,10 @@ if true; then
   model_save=500
   random_seed=42
   audio_ckpt_path='checkpoints/VST_deepfake_modalityaudio_batch48_epoch12.pth'
-  fused_ckpt_path='checkpoints/VST_deepfake_modalityfused_batch8_epoch3_step2499.pth'
+  fused_ckpt_path='checkpoints/VST_deepfake_modalityfused_batch8_epoch0_step2999.pth'
+  video_ckpt_path='checkpoints/VST_deepfake_modalityfused_batch8_epoch0_step2999.pth'
 
-  nohup python3 -u train.py \
+  nohup python3 -u test.py \
     --Resume\
     --soft ${soft}\
     --align_loss_rate ${align_loss_rate}\
@@ -61,8 +63,8 @@ if true; then
     --model_save ${model_save}\
     --log_step ${log_step}\
     --video_pool ${video_pool}\
-    --log_dir logs/DF_Sample:${sample}_Modality:${modality}_Batch:${batch_size}.log\
-    >logs/error_out_DF_Sample:${sample}_Modality:${modality}_Batch:${batch_size}.log 2>&1 &
+    --log_dir logs/DFSubmit_Sample:${sample}_Modality:${modality}_Batch:${batch_size}.log\
+    >logs/error_out_DFSubmit_Sample:${sample}_Modality:${modality}_Batch:${batch_size}.log 2>&1 &
 fi
 
     # --skip_learning\

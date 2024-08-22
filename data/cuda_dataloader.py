@@ -5,7 +5,7 @@ import torch
 class CudaDataLoader:
     """ 异步预先将数据从 CPU 加载到 GPU 中 """
 
-    def __init__(self, loader, device, queue_size=2):
+    def __init__(self, loader, device, queue_size=4):
         self.device = device
         self.queue_size = queue_size
         self.loader = loader

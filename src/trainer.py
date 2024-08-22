@@ -109,7 +109,11 @@ class Trainer():
             logger(f"Load Finetuned Model From:{path_checkpoint}")
             checkpoint = torch.load(path_checkpoint,map_location=device)
             state_dict = checkpoint['checkpoint']
-            self.model_s.load_state_dict(state_dict, strict=False) 
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = k[7:] # remove `module.`
+                new_state_dict[name] = v
+            self.model_s.load_state_dict(new_state_dict, strict=False) 
         
         self.model = DataParallel(self.model_s, device_ids=self.device_ids).to(self.device_ids[0]) 
         # self.optimizer.load_state_dict(checkpoint['optimizer']) 
@@ -169,7 +173,7 @@ class Trainer():
                     filename = filenames[ind]
                     result_dict[filename] = value
                 if iter_id % self.log_step == 0:
-                    logger('|step {:4d} |'.format(iter_id))
+                    logger('|step {:4d} |total {:4d}| Rate% {:.3f}'.format(iter_id, len(dataloader), iter_id/len(dataloader)*100))
         logger("Predict Done")
         print(result_dict)
         return result_dict

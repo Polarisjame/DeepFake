@@ -3,7 +3,7 @@ import csv
 import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0' # Visible Cuda Devices
 from data.data_process import DeepFakeSet
-from src.trainer import Trainer, weights_init
+from src.submit import SubmitCtl
 from config import get_opt
 # from src.VST.video_swin_transformer import VideoClassifier
 from src.models.swin_transformer2d import SwinTransformerV2
@@ -32,8 +32,6 @@ def test(args, logger):
         model = InceptionVideoClassifier(args, 1, drop_rate=args.swin_drop)
     elif args.modality == 'audio':
         model = SwinTransformerV2(num_classes=1,embed_dim=128,num_heads=[4,8,16,32 ],depths=[2,2,18,2 ],pretrained_window_sizes=(16,16,16,16))
-        weights_init(model)
-        load_pretrained(args, model, logger)
     elif args.modality == 'paudio':
         processor = Wav2Vec2Processor.from_pretrained("./checkpoints/wav2vec2-base-960h",local_files_only=True)
         wav_model = Wav2Vec2Model.from_pretrained("./checkpoints/wav2vec2-base-960h")
@@ -51,16 +49,15 @@ def test(args, logger):
     data = DeepFakeSet(args, logger=logger)
     data.setup(event)
     device = torch.device("cuda:0") if cuda.is_available() else 'cpu'
-    trainer = Trainer(model, args, device, data, logger, processor)
+    tester = SubmitCtl(model, args, device, data, logger, processor)
     
     if args.Resume:
-        trainer.load_ckpt(args)
-    
+        tester.load_ckpt(args)
+    tester.submit()
     # Produce submit.csv
-    result = trainer.submit(data)
-    fileName='prediction.csv'
+    fileName='prediction_full.csv'
     with open(fileName, 'w') as f:
-        f.write('video_name,target\n')
+        f.write('video_name,y_pred\n')
         [f.write('{0},{1}\n'.format(key, value)) for key, value in result.items()]
 
 if __name__ == '__main__':
